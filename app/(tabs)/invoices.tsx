@@ -92,16 +92,11 @@ export default function Invoices() {
     >
       <View style={[styles.statusIndicator, { backgroundColor: getStatusColor(item.status) }]} />
       <View style={styles.invoiceContent}>
-        <View style={styles.invoiceTop}>
-          <Text style={styles.clientName} numberOfLines={1}>{item.clientName}</Text>
-          <Text style={styles.amount}>{formatCurrency(item.total)}</Text>
-        </View>
-        <View style={styles.invoiceBottom}>
-          <Text style={styles.invoiceMeta}>{item.invoiceNumber}</Text>
-          <Text style={styles.invoiceDate}>{formatDate(item.createdAt)}</Text>
-        </View>
+        <Text style={styles.clientName} numberOfLines={1}>{item.clientName}</Text>
+        <Text style={styles.invoiceMeta}>{item.invoiceNumber} · {formatDate(item.createdAt)}</Text>
       </View>
-      <ChevronRight size={18} color={colors.textTertiary} />
+      <Text style={styles.amount}>{formatCurrency(item.total)}</Text>
+      <ChevronRight size={18} color={colors.textTertiary} style={{ marginLeft: spacing.sm }} />
     </Pressable>
   );
 
@@ -398,43 +393,28 @@ const createStyles = (colors: any, isDark: boolean) =>
       opacity: 0.7,
     },
     statusIndicator: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
+      width: 10,
+      height: 10,
+      borderRadius: 5,
       marginRight: spacing.md,
     },
     invoiceContent: {
       flex: 1,
     },
-    invoiceTop: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: 4,
-    },
     clientName: {
       ...typography.body,
       color: colors.text,
-      fontWeight: "500",
-      flex: 1,
-      marginRight: spacing.sm,
-    },
-    amount: {
-      ...typography.body,
-      color: colors.text,
       fontWeight: "600",
-    },
-    invoiceBottom: {
-      flexDirection: "row",
-      justifyContent: "space-between",
+      marginBottom: 2,
     },
     invoiceMeta: {
       ...typography.caption1,
       color: colors.textTertiary,
     },
-    invoiceDate: {
-      ...typography.caption1,
-      color: colors.textTertiary,
+    amount: {
+      ...typography.body,
+      color: colors.text,
+      fontWeight: "600",
     },
     // Empty State
     emptyContainer: {
