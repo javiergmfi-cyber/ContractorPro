@@ -1,25 +1,35 @@
 import { Tabs } from "expo-router";
 import { Home, FileText, User } from "lucide-react-native";
-import { COLORS } from "../../lib/constants";
+import { useTheme } from "../../lib/theme";
+import { View, StyleSheet } from "react-native";
 
 export default function TabLayout() {
+  const { colors, isDark } = useTheme();
+
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: COLORS.primary,
-        tabBarInactiveTintColor: COLORS.text.light,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textTertiary,
         tabBarStyle: {
-          backgroundColor: "#FFFFFF",
+          backgroundColor: isDark ? colors.backgroundSecondary : "#FFFFFF",
           borderTopWidth: 0,
           elevation: 0,
-          shadowOpacity: 0,
-          height: 85,
-          paddingBottom: 30,
-          paddingTop: 10,
+          shadowColor: colors.shadow,
+          shadowOffset: { width: 0, height: -4 },
+          shadowOpacity: isDark ? 0.3 : 0.06,
+          shadowRadius: 12,
+          height: 88,
+          paddingBottom: 32,
+          paddingTop: 12,
         },
         tabBarLabelStyle: {
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: "500",
+          marginTop: 4,
+        },
+        tabBarIconStyle: {
+          marginTop: 4,
         },
         headerShown: false,
       }}
@@ -28,23 +38,41 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "Dashboard",
-          tabBarIcon: ({ color, size }) => <Home size={size} color={color} />,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? styles.activeIconContainer : undefined}>
+              <Home size={24} color={color} strokeWidth={focused ? 2.5 : 2} />
+            </View>
+          ),
         }}
       />
       <Tabs.Screen
         name="invoices"
         options={{
           title: "Invoices",
-          tabBarIcon: ({ color, size }) => <FileText size={size} color={color} />,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? styles.activeIconContainer : undefined}>
+              <FileText size={24} color={color} strokeWidth={focused ? 2.5 : 2} />
+            </View>
+          ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: "Profile",
-          tabBarIcon: ({ color, size }) => <User size={size} color={color} />,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? styles.activeIconContainer : undefined}>
+              <User size={24} color={color} strokeWidth={focused ? 2.5 : 2} />
+            </View>
+          ),
         }}
       />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  activeIconContainer: {
+    // Subtle highlight for active tab
+  },
+});
