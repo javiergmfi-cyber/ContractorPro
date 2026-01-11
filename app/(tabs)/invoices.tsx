@@ -1,8 +1,8 @@
-import { View, Text, FlatList, StyleSheet, Animated, Pressable, RefreshControl } from "react-native";
+import { View, Text, FlatList, StyleSheet, Pressable, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { useRef, useEffect, useState, useCallback } from "react";
-import { FileText, ChevronRight, Clock } from "lucide-react-native";
+import { useState, useCallback } from "react";
+import { FileText, ChevronRight } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { useInvoiceStore } from "../../store/useInvoiceStore";
 import { useTheme, typography, spacing, radius } from "../../lib/theme";
@@ -17,25 +17,6 @@ export default function Invoices() {
   const { invoices } = useInvoiceStore();
   const [activeFilter, setActiveFilter] = useState<FilterType>("all");
   const [refreshing, setRefreshing] = useState(false);
-
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        friction: 8,
-        tension: 40,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -52,13 +33,6 @@ export default function Invoices() {
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 
-  // Stats - matching Dashboard
-  const totalAmount = invoices.reduce((sum, inv) => sum + inv.total, 0);
-  const pendingAmount = invoices
-    .filter((inv) => inv.status === "sent" || inv.status === "overdue")
-    .reduce((sum, inv) => sum + inv.total, 0);
-  const paidCount = invoices.filter((inv) => inv.status === "paid").length;
-
   const handleInvoicePress = (id: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push(`/invoice/${id}`);
@@ -68,8 +42,6 @@ export default function Invoices() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setActiveFilter(filter);
   };
-
-  const styles = createStyles(colors, isDark);
 
   const getStatusColor = (status: Invoice["status"]) => {
     switch (status) {
@@ -82,6 +54,8 @@ export default function Invoices() {
 
   const filters: FilterType[] = ["all", "draft", "sent", "paid", "overdue"];
 
+  const styles = createStyles(colors, isDark);
+
   const renderInvoiceItem = ({ item }: { item: Invoice }) => (
     <Pressable
       onPress={() => handleInvoicePress(item.id)}
@@ -90,120 +64,55 @@ export default function Invoices() {
         pressed && styles.invoiceCardPressed,
       ]}
     >
-      <View style={[styles.statusIndicator, { backgroundColor: getStatusColor(item.status) }]} />
-      <View style={styles.invoiceContent}>
+      <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />
+      <View style={styles.invoiceInfo}>
         <Text style={styles.clientName} numberOfLines={1}>{item.clientName}</Text>
         <Text style={styles.invoiceMeta}>{item.invoiceNumber} · {formatDate(item.createdAt)}</Text>
       </View>
       <Text style={styles.amount}>{formatCurrency(item.total)}</Text>
-      <ChevronRight size={18} color={colors.textTertiary} style={{ marginLeft: spacing.sm }} />
+      <ChevronRight size={16} color={colors.textTertiary} />
     </Pressable>
   );
 
   const ListHeader = () => (
-    <>
-      {/* Main Card - like Dashboard */}
-      <Animated.View
-        style={[
-          styles.mainCard,
-          {
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }],
-          },
-        ]}
-      >
-        <View style={styles.mainCardHeader}>
-          <View style={styles.iconContainer}>
-            <FileText size={20} color={colors.primary} />
-          </View>
-          <Text style={styles.mainCardLabel}>Total Invoiced</Text>
-        </View>
-        <Text style={styles.mainCardAmount}>{formatCurrency(totalAmount)}</Text>
-        <Text style={styles.mainCardSubtext}>
-          {invoices.length} invoice{invoices.length !== 1 ? "s" : ""} created
-        </Text>
-      </Animated.View>
+    <View style={styles.filtersContainer}>
+      {filters.map((filter) => {
+        const isActive = activeFilter === filter;
+        const count = filter === "all"
+          ? invoices.length
+          : invoices.filter(i => i.status === filter).length;
 
-      {/* Stats Row - like Dashboard */}
-      <Animated.View
-        style={[
-          styles.statsRow,
-          {
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }],
-          },
-        ]}
-      >
-        <View style={[styles.statCard, styles.statCardPending]}>
-          <View style={styles.statIconContainer}>
-            <Clock size={18} color={colors.alert} />
-          </View>
-          <Text style={styles.statLabel}>Pending</Text>
-          <Text style={[styles.statAmount, { color: colors.alert }]}>
-            {formatCurrency(pendingAmount)}
-          </Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statLabel}>Paid</Text>
-          <Text style={styles.statAmount}>{paidCount}</Text>
-          <Text style={styles.statSubtext}>invoices</Text>
-        </View>
-      </Animated.View>
+        if (filter !== "all" && count === 0) return null;
 
-      {/* Simple Filter Pills */}
-      <Animated.View
-        style={[
-          styles.filtersRow,
-          { opacity: fadeAnim },
-        ]}
-      >
-        {filters.map((filter) => {
-          const isActive = activeFilter === filter;
-          const count = filter === "all"
-            ? invoices.length
-            : invoices.filter(i => i.status === filter).length;
-
-          if (filter !== "all" && count === 0) return null;
-
-          return (
-            <Pressable
-              key={filter}
-              onPress={() => handleFilterPress(filter)}
-              style={[
-                styles.filterPill,
-                isActive && styles.filterPillActive,
-              ]}
-            >
-              <Text style={[
-                styles.filterText,
-                isActive && styles.filterTextActive,
-              ]}>
-                {filter.charAt(0).toUpperCase() + filter.slice(1)}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </Animated.View>
-    </>
+        return (
+          <Pressable
+            key={filter}
+            onPress={() => handleFilterPress(filter)}
+            style={[
+              styles.filterPill,
+              isActive && styles.filterPillActive,
+            ]}
+          >
+            <Text style={[
+              styles.filterText,
+              isActive && styles.filterTextActive,
+            ]}>
+              {filter.charAt(0).toUpperCase() + filter.slice(1)}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
   );
 
   if (invoices.length === 0) {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <Animated.View
-          style={[
-            styles.header,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            },
-          ]}
-        >
+        <View style={styles.header}>
           <Text style={styles.title}>Invoices</Text>
-        </Animated.View>
-
+        </View>
         <View style={styles.emptyContainer}>
-          <View style={styles.emptyIconContainer}>
+          <View style={styles.emptyIcon}>
             <FileText size={32} color={colors.textTertiary} strokeWidth={1.5} />
           </View>
           <Text style={styles.emptyTitle}>No invoices yet</Text>
@@ -217,17 +126,10 @@ export default function Invoices() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <Animated.View
-        style={[
-          styles.header,
-          {
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }],
-          },
-        ]}
-      >
+      <View style={styles.header}>
         <Text style={styles.title}>Invoices</Text>
-      </Animated.View>
+        <Text style={styles.subtitle}>{invoices.length} total</Text>
+      </View>
 
       <FlatList
         data={sortedInvoices}
@@ -262,96 +164,22 @@ const createStyles = (colors: any, isDark: boolean) =>
     header: {
       paddingHorizontal: spacing.lg,
       paddingTop: spacing.md,
-      marginBottom: spacing.md,
+      paddingBottom: spacing.sm,
     },
     title: {
       ...typography.largeTitle,
       color: colors.text,
     },
-    // Main Card - matching Dashboard
-    mainCard: {
-      backgroundColor: colors.card,
-      borderRadius: radius.xl,
-      padding: spacing.lg,
-      marginHorizontal: spacing.lg,
-      marginBottom: spacing.md,
-      shadowColor: colors.shadow,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: isDark ? 0.4 : 0.08,
-      shadowRadius: 16,
-      elevation: 5,
-    },
-    mainCardHeader: {
-      flexDirection: "row",
-      alignItems: "center",
-      marginBottom: spacing.md,
-    },
-    iconContainer: {
-      width: 36,
-      height: 36,
-      borderRadius: 12,
-      backgroundColor: isDark ? "rgba(0, 214, 50, 0.15)" : "rgba(0, 214, 50, 0.1)",
-      alignItems: "center",
-      justifyContent: "center",
-      marginRight: spacing.sm,
-    },
-    mainCardLabel: {
+    subtitle: {
       ...typography.subhead,
       color: colors.textTertiary,
+      marginTop: 2,
     },
-    mainCardAmount: {
-      ...typography.amount,
-      color: colors.primary,
-      marginBottom: spacing.xs,
-    },
-    mainCardSubtext: {
-      ...typography.footnote,
-      color: colors.textTertiary,
-    },
-    // Stats Row - matching Dashboard
-    statsRow: {
+    // Filters
+    filtersContainer: {
       flexDirection: "row",
       paddingHorizontal: spacing.lg,
-      gap: spacing.md,
-      marginBottom: spacing.lg,
-    },
-    statCard: {
-      flex: 1,
-      backgroundColor: colors.card,
-      borderRadius: radius.lg,
-      padding: spacing.md,
-      shadowColor: colors.shadow,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: isDark ? 0.3 : 0.06,
-      shadowRadius: 8,
-      elevation: 3,
-    },
-    statCardPending: {
-      borderLeftWidth: 3,
-      borderLeftColor: colors.alert,
-    },
-    statIconContainer: {
-      marginBottom: spacing.sm,
-    },
-    statLabel: {
-      ...typography.caption1,
-      color: colors.textTertiary,
-      marginBottom: spacing.xs,
-    },
-    statAmount: {
-      ...typography.amountSmall,
-      color: colors.text,
-    },
-    statSubtext: {
-      ...typography.caption2,
-      color: colors.textTertiary,
-      marginTop: spacing.xs,
-    },
-    // Simple Filters
-    filtersRow: {
-      flexDirection: "row",
-      paddingHorizontal: spacing.lg,
-      marginBottom: spacing.md,
+      paddingBottom: spacing.md,
       gap: spacing.sm,
     },
     filterPill: {
@@ -371,10 +199,11 @@ const createStyles = (colors: any, isDark: boolean) =>
     filterTextActive: {
       color: colors.background,
     },
-    // Invoice Cards
+    // List
     listContent: {
       paddingBottom: 120,
     },
+    // Invoice Card
     invoiceCard: {
       flexDirection: "row",
       alignItems: "center",
@@ -382,7 +211,8 @@ const createStyles = (colors: any, isDark: boolean) =>
       marginHorizontal: spacing.lg,
       marginBottom: spacing.sm,
       borderRadius: radius.lg,
-      padding: spacing.md,
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.md,
       shadowColor: colors.shadow,
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: isDark ? 0.3 : 0.06,
@@ -392,14 +222,15 @@ const createStyles = (colors: any, isDark: boolean) =>
     invoiceCardPressed: {
       opacity: 0.7,
     },
-    statusIndicator: {
+    statusDot: {
       width: 10,
       height: 10,
       borderRadius: 5,
       marginRight: spacing.md,
     },
-    invoiceContent: {
+    invoiceInfo: {
       flex: 1,
+      marginRight: spacing.sm,
     },
     clientName: {
       ...typography.body,
@@ -415,6 +246,7 @@ const createStyles = (colors: any, isDark: boolean) =>
       ...typography.body,
       color: colors.text,
       fontWeight: "600",
+      marginRight: spacing.sm,
     },
     // Empty State
     emptyContainer: {
@@ -423,7 +255,7 @@ const createStyles = (colors: any, isDark: boolean) =>
       alignItems: "center",
       paddingHorizontal: spacing.xl,
     },
-    emptyIconContainer: {
+    emptyIcon: {
       width: 64,
       height: 64,
       borderRadius: 32,
