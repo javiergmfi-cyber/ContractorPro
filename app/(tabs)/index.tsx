@@ -1,8 +1,8 @@
-import { View, Text, ScrollView, StyleSheet, Pressable } from "react-native";
+import { View, Text, ScrollView, StyleSheet, Animated, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useState, useEffect, useRef } from "react";
-import { Moon, Sun } from "lucide-react-native";
+import { Moon, Sun, TrendingUp, Clock } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { VoiceButton } from "../../components/VoiceButton";
 import { RecordingOverlay } from "../../components/RecordingOverlay";
@@ -20,6 +20,26 @@ export default function Dashboard() {
   const { profile } = useProfileStore();
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
+
+  // Animations
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -72,54 +92,82 @@ export default function Dashboard() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
+        <Animated.View
+          style={[
+            styles.header,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
           <View>
-            <Text style={styles.greeting}>{getGreeting()}</Text>
+            <Text style={styles.greeting}>
+              {getGreeting()}
+            </Text>
             <Text style={styles.businessName}>
               {profile.businessName || "ContractorPro"}
             </Text>
           </View>
           <Pressable onPress={handleThemeToggle} style={styles.themeButton}>
             {isDark ? (
-              <Sun size={20} color={colors.text} />
+              <Sun size={22} color={colors.text} />
             ) : (
-              <Moon size={20} color={colors.text} />
+              <Moon size={22} color={colors.text} />
             )}
           </Pressable>
-        </View>
+        </Animated.View>
 
-        {/* Revenue */}
-        <View style={styles.revenueSection}>
-          <Text style={styles.revenueLabel}>Total Revenue</Text>
-          <Text style={styles.revenueAmount}>{formatCurrency(totalRevenue)}</Text>
-          {pendingAmount > 0 && (
-            <Text style={styles.pendingText}>
-              {formatCurrency(pendingAmount)} pending
-            </Text>
-          )}
-        </View>
+        <Animated.View
+          style={[
+            styles.mainCard,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
+          <View style={styles.mainCardHeader}>
+            <View style={styles.iconContainer}>
+              <TrendingUp size={20} color={colors.primary} />
+            </View>
+            <Text style={styles.mainCardLabel}>Total Revenue</Text>
+          </View>
+          <Text style={styles.mainCardAmount}>
+            {formatCurrency(totalRevenue)}
+          </Text>
+          <Text style={styles.mainCardSubtext}>
+            {invoices.filter((inv) => inv.status === "paid").length} paid invoices
+          </Text>
+        </Animated.View>
 
-        {/* Stats row */}
-        <View style={styles.statsRow}>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{invoices.length}</Text>
-            <Text style={styles.statLabel}>Invoices</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>
-              {invoices.filter((inv) => inv.status === "paid").length}
-            </Text>
-            <Text style={styles.statLabel}>Paid</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>
-              {invoices.filter((inv) => inv.status === "sent" || inv.status === "overdue").length}
-            </Text>
+        <Animated.View
+          style={[
+            styles.statsRow,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
+          <View style={[styles.statCard, styles.statCardPending]}>
+            <View style={styles.statIconContainer}>
+              <Clock size={18} color={colors.alert} />
+            </View>
             <Text style={styles.statLabel}>Pending</Text>
+            <Text style={[styles.statAmount, { color: colors.alert }]}>
+              {formatCurrency(pendingAmount)}
+            </Text>
           </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Invoices</Text>
+            <Text style={styles.statAmount}>{invoices.length}</Text>
+            <Text style={styles.statSubtext}>total created</Text>
+          </View>
+        </Animated.View>
+
+        <View style={styles.voiceSection}>
+          <Text style={styles.voiceHint}>Hold to create invoice</Text>
         </View>
       </ScrollView>
 
@@ -154,7 +202,7 @@ const createStyles = (colors: any, isDark: boolean) =>
     },
     scrollContent: {
       paddingHorizontal: spacing.lg,
-      paddingBottom: 200,
+      paddingBottom: 180,
     },
     header: {
       flexDirection: "row",
@@ -173,59 +221,101 @@ const createStyles = (colors: any, isDark: boolean) =>
       color: colors.text,
     },
     themeButton: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
+      width: 44,
+      height: 44,
+      borderRadius: 22,
       backgroundColor: colors.backgroundSecondary,
       alignItems: "center",
       justifyContent: "center",
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: isDark ? 0.3 : 0.08,
+      shadowRadius: 8,
+      elevation: 3,
     },
-    // Revenue
-    revenueSection: {
-      marginBottom: spacing.xl,
+    mainCard: {
+      backgroundColor: colors.card,
+      borderRadius: radius.xl,
+      padding: spacing.lg,
+      marginBottom: spacing.md,
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: isDark ? 0.4 : 0.08,
+      shadowRadius: 16,
+      elevation: 5,
     },
-    revenueLabel: {
-      ...typography.footnote,
+    mainCardHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: spacing.md,
+    },
+    iconContainer: {
+      width: 36,
+      height: 36,
+      borderRadius: 12,
+      backgroundColor: isDark ? "rgba(0, 214, 50, 0.15)" : "rgba(0, 214, 50, 0.1)",
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: spacing.sm,
+    },
+    mainCardLabel: {
+      ...typography.subhead,
       color: colors.textTertiary,
+    },
+    mainCardAmount: {
+      ...typography.amount,
+      color: colors.primary,
       marginBottom: spacing.xs,
     },
-    revenueAmount: {
-      fontSize: 48,
-      fontWeight: "700",
-      color: colors.primary,
-      letterSpacing: -1,
-    },
-    pendingText: {
+    mainCardSubtext: {
       ...typography.footnote,
-      color: colors.alert,
-      marginTop: spacing.xs,
+      color: colors.textTertiary,
     },
-    // Stats
     statsRow: {
       flexDirection: "row",
+      gap: spacing.md,
+      marginBottom: spacing.xl,
+    },
+    statCard: {
+      flex: 1,
       backgroundColor: colors.card,
       borderRadius: radius.lg,
-      padding: spacing.lg,
+      padding: spacing.md,
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: isDark ? 0.3 : 0.06,
+      shadowRadius: 8,
+      elevation: 3,
     },
-    statItem: {
-      flex: 1,
-      alignItems: "center",
+    statCardPending: {
+      borderLeftWidth: 3,
+      borderLeftColor: colors.alert,
     },
-    statValue: {
-      ...typography.title2,
-      color: colors.text,
-      marginBottom: 2,
+    statIconContainer: {
+      marginBottom: spacing.sm,
     },
     statLabel: {
       ...typography.caption1,
       color: colors.textTertiary,
+      marginBottom: spacing.xs,
     },
-    statDivider: {
-      width: 1,
-      backgroundColor: colors.border,
-      marginVertical: spacing.xs,
+    statAmount: {
+      ...typography.amountSmall,
+      color: colors.text,
     },
-    // Voice button
+    statSubtext: {
+      ...typography.caption2,
+      color: colors.textTertiary,
+      marginTop: spacing.xs,
+    },
+    voiceSection: {
+      alignItems: "center",
+      marginTop: spacing.xl,
+    },
+    voiceHint: {
+      ...typography.footnote,
+      color: colors.textTertiary,
+    },
     voiceButtonContainer: {
       position: "absolute",
       bottom: 120,
