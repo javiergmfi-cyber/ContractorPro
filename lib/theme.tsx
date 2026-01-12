@@ -1,10 +1,22 @@
 import { createContext, useContext, useState, ReactNode } from "react";
 import { useColorScheme } from "react-native";
 
+/**
+ * Theme Configuration
+ * Per design-system.md Section 4.2
+ */
+
 export const colors = {
   light: {
     primary: "#00D632",
     primaryDark: "#00B82B",
+
+    // Status colors per design-system.md
+    statusPaid: "#248A3D",      // Forest Green (Light Mode)
+    statusOverdue: "#D93600",   // Burnt Orange (Light Mode)
+    statusSent: "#007AFF",      // System Blue
+    statusDraft: "#8E8E93",     // System Gray
+
     alert: "#FF9500",
     error: "#FF3B30",
     success: "#34C759",
@@ -30,6 +42,13 @@ export const colors = {
   dark: {
     primary: "#00D632",
     primaryDark: "#00FF41",
+
+    // Status colors per design-system.md (Electric/Neon for Dark Mode)
+    statusPaid: "#39FF14",      // Neon Green (Dark Mode)
+    statusOverdue: "#FF3503",   // Electric Orange (Dark Mode)
+    statusSent: "#0A84FF",      // System Blue
+    statusDraft: "#98989D",     // System Gray 2
+
     alert: "#FF9F0A",
     error: "#FF453A",
     success: "#32D74B",
@@ -54,6 +73,10 @@ export const colors = {
   },
 };
 
+/**
+ * Typography per design-system.md Section 4.1
+ * SF Pro Rounded styles
+ */
 export const typography = {
   largeTitle: {
     fontSize: 34,
@@ -121,7 +144,14 @@ export const typography = {
     letterSpacing: 0.07,
     lineHeight: 13,
   },
-  // Special styles
+  // Invoice Amount - Primary Field per design-system.md
+  invoiceAmount: {
+    fontSize: 22,
+    fontWeight: "800" as const,
+    letterSpacing: -0.5,
+    lineHeight: 28,
+  },
+  // Dashboard Amount
   amount: {
     fontSize: 44,
     fontWeight: "700" as const,
@@ -145,19 +175,65 @@ export const spacing = {
   xxl: 48,
 };
 
+/**
+ * Border Radius per design-system.md Section 4.3
+ * Squircle geometry with 12pt default
+ */
 export const radius = {
   sm: 8,
-  md: 12,
+  md: 12,   // Default for cards per design-system.md
   lg: 16,
   xl: 20,
   xxl: 28,
   full: 9999,
 };
 
+/**
+ * Shadows per design-system.md Section 4.3
+ */
+export const shadows = {
+  light: {
+    default: {
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.06,
+      shadowRadius: 8,
+      elevation: 3,
+    },
+    elevated: {
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.12,
+      shadowRadius: 24,
+      elevation: 8,
+    },
+  },
+  dark: {
+    default: {
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 3,
+    },
+    elevated: {
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.4,
+      shadowRadius: 24,
+      elevation: 8,
+    },
+  },
+};
+
 interface ThemeContextType {
   isDark: boolean;
   toggleTheme: () => void;
   colors: typeof colors.light;
+  typography: typeof typography;
+  spacing: typeof spacing;
+  radius: typeof radius;
+  shadows: typeof shadows.light;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -169,9 +245,20 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const toggleTheme = () => setIsDark((prev) => !prev);
 
   const themeColors = isDark ? colors.dark : colors.light;
+  const themeShadows = isDark ? shadows.dark : shadows.light;
 
   return (
-    <ThemeContext.Provider value={{ isDark, toggleTheme, colors: themeColors }}>
+    <ThemeContext.Provider
+      value={{
+        isDark,
+        toggleTheme,
+        colors: themeColors,
+        typography,
+        spacing,
+        radius,
+        shadows: themeShadows,
+      }}
+    >
       {children}
     </ThemeContext.Provider>
   );
@@ -183,4 +270,42 @@ export function useTheme() {
     throw new Error("useTheme must be used within a ThemeProvider");
   }
   return context;
+}
+
+/**
+ * Get status color based on invoice status
+ * Per design-system.md Section 6.2
+ */
+export function getStatusColor(
+  status: "draft" | "sent" | "paid" | "overdue" | "void",
+  themeColors: typeof colors.light
+): { background: string; text: string } {
+  switch (status) {
+    case "paid":
+      return {
+        background: themeColors.statusPaid + "20",
+        text: themeColors.statusPaid,
+      };
+    case "overdue":
+      return {
+        background: themeColors.statusOverdue + "20",
+        text: themeColors.statusOverdue,
+      };
+    case "sent":
+      return {
+        background: themeColors.statusSent + "20",
+        text: themeColors.statusSent,
+      };
+    case "void":
+      return {
+        background: themeColors.textTertiary + "20",
+        text: themeColors.textTertiary,
+      };
+    case "draft":
+    default:
+      return {
+        background: themeColors.statusDraft + "20",
+        text: themeColors.statusDraft,
+      };
+  }
 }

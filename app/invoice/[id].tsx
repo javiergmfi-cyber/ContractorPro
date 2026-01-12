@@ -1,163 +1,541 @@
-import { View, Text, ScrollView, Alert } from "react-native";
+import React, { useState, useEffect } from "react";
+import {
+  View,
+  Text,
+  ScrollView,
+  Alert,
+  Pressable,
+  StyleSheet,
+  ActivityIndicator,
+  ActionSheetIOS,
+  Platform,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { ArrowLeft, Share2, Printer } from "lucide-react-native";
-import { Pressable } from "react-native";
+import {
+  ArrowLeft,
+  Share2,
+  FileText,
+  MessageSquare,
+  Mail,
+  CheckCircle,
+  Clock,
+  AlertCircle,
+  CreditCard,
+  ExternalLink,
+  MoreHorizontal,
+} from "lucide-react-native";
 import * as Haptics from "expo-haptics";
-import { Card } from "../../components/ui/Card";
-import { Button } from "../../components/ui/Button";
-import { MonogramAvatar } from "../../components/MonogramAvatar";
-import { useInvoiceStore } from "../../store/useInvoiceStore";
-import { useProfileStore } from "../../store/useProfileStore";
-import { formatCurrency, formatDate } from "../../lib/utils";
-import { COLORS } from "../../lib/constants";
+import * as Linking from "expo-linking";
+import { useTheme, getStatusColor } from "@/lib/theme";
+import { Button } from "@/components/ui/Button";
+import { useInvoiceStore } from "@/store/useInvoiceStore";
+import { useProfileStore } from "@/store/useProfileStore";
+import { Invoice, formatCurrency, formatRelativeDate } from "@/types";
+import { sendInvoice, generateInvoicePDF } from "@/services/invoice";
+import { getPaymentLink } from "@/services/stripe";
+import * as db from "@/services/database";
+
+/**
+ * Invoice Detail Screen
+ * Per design-system.md and product-strategy.md
+ *
+ * Features:
+ * - Full invoice view with status
+ * - Send invoice flow (PDF + payment link + share)
+ * - Multiple share options (SMS, WhatsApp, Email)
+ * - Mark as paid
+ * - View payment link
+ */
 
 export default function InvoiceDetail() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { invoices, updateInvoice } = useInvoiceStore();
+  const { colors, typography, spacing, radius, shadows, isDark } = useTheme();
+  const { invoices, fetchInvoice, updateInvoice } = useInvoiceStore();
   const { profile } = useProfileStore();
 
-  const invoice = invoices.find((inv) => inv.id === id);
+  const [invoice, setInvoice] = useState<Invoice | null>(null);
+  const [invoiceItems, setInvoiceItems] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSending, setIsSending] = useState(false);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
-  if (!invoice) {
+  useEffect(() => {
+    loadInvoice();
+  }, [id]);
+
+  const loadInvoice = async () => {
+    setIsLoading(true);
+    try {
+      // Try to get from store first
+      let inv = invoices.find((i) => i.id === id);
+
+      if (!inv && id) {
+        // Fetch from database
+        inv = await db.getInvoice(id);
+      }
+
+      if (inv) {
+        setInvoice(inv);
+        // Fetch invoice items
+        const items = await db.getInvoiceItems(inv.id);
+        setInvoiceItems(items || []);
+      }
+    } catch (error) {
+      console.error("Error loading invoice:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (isLoading) {
     return (
-      <SafeAreaView className="flex-1 bg-white items-center justify-center">
-        <Text className="text-gray-500">Invoice not found</Text>
-        <Button
-          title="Go Back"
-          variant="secondary"
-          onPress={() => router.back()}
-        />
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
       </SafeAreaView>
     );
   }
 
-  const handleMarkAsPaid = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    updateInvoice(invoice.id, {
-      status: "paid",
-      paidAt: new Date().toISOString(),
-    });
-    Alert.alert("Success", "Invoice marked as paid!");
-  };
+  if (!invoice) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.emptyContainer}>
+          <Text style={[typography.body, { color: colors.textSecondary }]}>
+            Invoice not found
+          </Text>
+          <Button title="Go Back" variant="secondary" onPress={() => router.back()} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const statusColors = getStatusColor(invoice.status, colors);
 
   const handleSendInvoice = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    updateInvoice(invoice.id, { status: "sent" });
-    Alert.alert("Sent", "Invoice has been marked as sent.");
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ["Cancel", "Send via SMS", "Send via WhatsApp", "Send via Email", "Share..."],
+          cancelButtonIndex: 0,
+          title: "How would you like to send this invoice?",
+        },
+        async (buttonIndex) => {
+          if (buttonIndex === 0) return;
+
+          const shareMethod = ["", "sms", "whatsapp", "email", "native"][buttonIndex] as any;
+          await performSendInvoice(shareMethod);
+        }
+      );
+    } else {
+      // Android - show custom modal or direct share
+      Alert.alert(
+        "Send Invoice",
+        "How would you like to send this invoice?",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "SMS", onPress: () => performSendInvoice("sms") },
+          { text: "WhatsApp", onPress: () => performSendInvoice("whatsapp") },
+          { text: "Email", onPress: () => performSendInvoice("email") },
+          { text: "Share...", onPress: () => performSendInvoice("native") },
+        ]
+      );
+    }
   };
 
-  const statusColors = {
-    draft: { bg: "bg-gray-100", text: "text-gray-600" },
-    sent: { bg: "bg-blue-100", text: "text-blue-600" },
-    paid: { bg: "bg-green-100", text: "text-green-600" },
-    overdue: { bg: "bg-orange-100", text: "text-orange-600" },
+  const performSendInvoice = async (shareMethod: "sms" | "whatsapp" | "email" | "native") => {
+    setIsSending(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    try {
+      const result = await sendInvoice(invoice, {
+        includePaymentLink: true,
+        shareMethod,
+      });
+
+      if (result.success) {
+        // Update invoice status to 'sent' if it was draft
+        if (invoice.status === "draft") {
+          await updateInvoice(invoice.id, { status: "sent" });
+          setInvoice({ ...invoice, status: "sent" });
+        }
+
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else {
+        Alert.alert("Error", result.error || "Failed to send invoice");
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+    } catch (error: any) {
+      console.error("Error sending invoice:", error);
+      Alert.alert("Error", error.message || "Failed to send invoice");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleMarkAsPaid = () => {
+    Alert.alert(
+      "Mark as Paid",
+      "Are you sure you want to mark this invoice as paid?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Mark Paid",
+          onPress: async () => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            await updateInvoice(invoice.id, {
+              status: "paid",
+              paid_at: new Date().toISOString(),
+            });
+            setInvoice({ ...invoice, status: "paid", paid_at: new Date().toISOString() });
+          },
+        },
+      ]
+    );
+  };
+
+  const handleViewPDF = async () => {
+    setIsGeneratingPDF(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    try {
+      const result = await generateInvoicePDF(invoice.id);
+      if (result?.pdfUrl) {
+        await Linking.openURL(result.pdfUrl);
+      } else {
+        Alert.alert("Error", "Failed to generate PDF");
+      }
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      Alert.alert("Error", "Failed to generate PDF");
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
+  const handleViewPaymentLink = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    try {
+      if (invoice.stripe_hosted_invoice_url) {
+        await Linking.openURL(invoice.stripe_hosted_invoice_url);
+      } else {
+        const result = await getPaymentLink(invoice.id);
+        if (result?.url) {
+          await Linking.openURL(result.url);
+        }
+      }
+    } catch (error) {
+      console.error("Error opening payment link:", error);
+      Alert.alert("Error", "Failed to open payment link");
+    }
+  };
+
+  const handleMoreOptions = () => {
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ["Cancel", "View PDF", "Copy Payment Link", "Void Invoice"],
+          cancelButtonIndex: 0,
+          destructiveButtonIndex: 3,
+        },
+        async (buttonIndex) => {
+          switch (buttonIndex) {
+            case 1:
+              await handleViewPDF();
+              break;
+            case 2:
+              // Copy payment link
+              break;
+            case 3:
+              handleVoidInvoice();
+              break;
+          }
+        }
+      );
+    }
+  };
+
+  const handleVoidInvoice = () => {
+    Alert.alert(
+      "Void Invoice",
+      "Are you sure you want to void this invoice? This action cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Void Invoice",
+          style: "destructive",
+          onPress: async () => {
+            await updateInvoice(invoice.id, { status: "void" });
+            setInvoice({ ...invoice, status: "void" });
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          },
+        },
+      ]
+    );
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  };
+
+  const getStatusIcon = () => {
+    switch (invoice.status) {
+      case "paid":
+        return <CheckCircle size={20} color={statusColors.text} />;
+      case "overdue":
+        return <AlertCircle size={20} color={statusColors.text} />;
+      default:
+        return <Clock size={20} color={statusColors.text} />;
+    }
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-white">
-      <View className="flex-row items-center justify-between px-6 py-4 border-b border-gray-100">
-        <Pressable onPress={() => router.back()} className="p-2 -ml-2">
-          <ArrowLeft size={24} color={COLORS.text.primary} />
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Header */}
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <Pressable onPress={() => router.back()} style={styles.headerButton}>
+          <ArrowLeft size={24} color={colors.text} />
         </Pressable>
-        <Text className="text-lg font-semibold">{invoice.invoiceNumber}</Text>
-        <View className="flex-row gap-2">
-          <Pressable className="p-2">
-            <Share2 size={22} color={COLORS.text.primary} />
-          </Pressable>
-          <Pressable className="p-2 -mr-2">
-            <Printer size={22} color={COLORS.text.primary} />
-          </Pressable>
-        </View>
+        <Text style={[typography.headline, { color: colors.text }]}>
+          {invoice.invoice_number}
+        </Text>
+        <Pressable onPress={handleMoreOptions} style={styles.headerButton}>
+          <MoreHorizontal size={24} color={colors.text} />
+        </Pressable>
       </View>
 
-      <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 40 }}>
-        <View className="px-6 pt-6">
-          <View className="items-center mb-6">
-            <MonogramAvatar name={invoice.clientName} size="lg" />
-            <Text className="text-2xl font-bold mt-3">{invoice.clientName}</Text>
-            <View className={`px-3 py-1 rounded-full mt-2 ${statusColors[invoice.status].bg}`}>
-              <Text className={`text-sm font-medium capitalize ${statusColors[invoice.status].text}`}>
-                {invoice.status}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Client Info & Status */}
+        <View style={styles.clientSection}>
+          <View
+            style={[
+              styles.avatar,
+              { backgroundColor: colors.primary + "20" },
+            ]}
+          >
+            <Text style={[typography.title2, { color: colors.primary }]}>
+              {invoice.client_name?.charAt(0).toUpperCase() || "?"}
+            </Text>
+          </View>
+          <Text style={[typography.title1, { color: colors.text, marginTop: spacing.md }]}>
+            {invoice.client_name}
+          </Text>
+          <View
+            style={[
+              styles.statusBadge,
+              { backgroundColor: statusColors.background, marginTop: spacing.sm },
+            ]}
+          >
+            {getStatusIcon()}
+            <Text
+              style={[
+                typography.footnote,
+                { color: statusColors.text, fontWeight: "600", marginLeft: 6 },
+              ]}
+            >
+              {invoice.status.toUpperCase()}
+            </Text>
+          </View>
+        </View>
+
+        {/* Dates */}
+        <View style={styles.datesRow}>
+          <View style={styles.dateItem}>
+            <Text style={[typography.caption1, { color: colors.textTertiary }]}>
+              Created
+            </Text>
+            <Text style={[typography.body, { color: colors.text, fontWeight: "500" }]}>
+              {formatDate(invoice.created_at)}
+            </Text>
+          </View>
+          {invoice.due_date && (
+            <View style={[styles.dateItem, { alignItems: "flex-end" }]}>
+              <Text style={[typography.caption1, { color: colors.textTertiary }]}>
+                Due Date
               </Text>
-            </View>
-          </View>
-
-          <View className="flex-row justify-between mb-6">
-            <View>
-              <Text className="text-gray-500 text-sm">Created</Text>
-              <Text className="font-medium">{formatDate(invoice.createdAt)}</Text>
-            </View>
-            {invoice.dueDate && (
-              <View className="items-end">
-                <Text className="text-gray-500 text-sm">Due Date</Text>
-                <Text className="font-medium">{formatDate(invoice.dueDate)}</Text>
-              </View>
-            )}
-          </View>
-
-          <Card className="bg-gray-50 mb-6">
-            <Text className="text-sm font-medium text-gray-500 mb-4">Items</Text>
-            {invoice.items.map((item) => (
-              <View
-                key={item.id}
-                className="flex-row justify-between items-center py-3 border-b border-gray-200 last:border-b-0"
-              >
-                <View className="flex-1">
-                  <Text className="text-base font-medium">{item.description}</Text>
-                  <Text className="text-sm text-gray-500">
-                    Qty: {item.quantity} × {formatCurrency(item.price)}
-                  </Text>
-                </View>
-                <Text className="text-base font-semibold">
-                  {formatCurrency(item.quantity * item.price)}
-                </Text>
-              </View>
-            ))}
-          </Card>
-
-          <View className="bg-gray-50 rounded-2xl p-5">
-            <View className="flex-row justify-between mb-2">
-              <Text className="text-gray-500">Subtotal</Text>
-              <Text className="font-medium">{formatCurrency(invoice.subtotal)}</Text>
-            </View>
-            {invoice.taxRate > 0 && (
-              <View className="flex-row justify-between mb-2">
-                <Text className="text-gray-500">Tax ({invoice.taxRate}%)</Text>
-                <Text className="font-medium">{formatCurrency(invoice.taxAmount)}</Text>
-              </View>
-            )}
-            <View className="flex-row justify-between pt-3 border-t border-gray-200">
-              <Text className="text-lg font-bold">Total</Text>
-              <Text className="text-lg font-bold" style={{ color: COLORS.primary }}>
-                {formatCurrency(invoice.total)}
+              <Text style={[typography.body, { color: colors.text, fontWeight: "500" }]}>
+                {formatDate(invoice.due_date)}
               </Text>
-            </View>
-          </View>
-
-          {profile.businessName && (
-            <View className="mt-6 pt-6 border-t border-gray-100">
-              <Text className="text-gray-500 text-sm mb-1">From</Text>
-              <Text className="font-medium">{profile.businessName}</Text>
-              {profile.email && <Text className="text-gray-500">{profile.email}</Text>}
-              {profile.phone && <Text className="text-gray-500">{profile.phone}</Text>}
             </View>
           )}
         </View>
+
+        {/* Line Items */}
+        <View
+          style={[
+            styles.itemsCard,
+            { backgroundColor: colors.card, borderRadius: radius.lg, ...shadows.default },
+          ]}
+        >
+          <Text
+            style={[
+              typography.footnote,
+              { color: colors.textTertiary, fontWeight: "500", marginBottom: spacing.md },
+            ]}
+          >
+            Items
+          </Text>
+          {invoiceItems.map((item, index) => (
+            <View
+              key={item.id || index}
+              style={[
+                styles.itemRow,
+                index < invoiceItems.length - 1 && {
+                  borderBottomWidth: 1,
+                  borderBottomColor: colors.border,
+                },
+              ]}
+            >
+              <View style={styles.itemContent}>
+                <Text style={[typography.body, { color: colors.text, fontWeight: "500" }]}>
+                  {item.description}
+                </Text>
+                <Text style={[typography.caption1, { color: colors.textTertiary }]}>
+                  Qty: {item.quantity} × {formatCurrency(item.unit_price, invoice.currency)}
+                </Text>
+              </View>
+              <Text style={[typography.body, { color: colors.text, fontWeight: "600" }]}>
+                {formatCurrency(item.total, invoice.currency)}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Totals */}
+        <View
+          style={[
+            styles.totalsCard,
+            { backgroundColor: colors.backgroundSecondary, borderRadius: radius.lg },
+          ]}
+        >
+          <View style={styles.totalRow}>
+            <Text style={[typography.body, { color: colors.textSecondary }]}>Subtotal</Text>
+            <Text style={[typography.body, { color: colors.text, fontWeight: "500" }]}>
+              {formatCurrency(invoice.subtotal, invoice.currency)}
+            </Text>
+          </View>
+          {invoice.tax_amount > 0 && (
+            <View style={styles.totalRow}>
+              <Text style={[typography.body, { color: colors.textSecondary }]}>
+                Tax ({profile?.tax_rate || 0}%)
+              </Text>
+              <Text style={[typography.body, { color: colors.text, fontWeight: "500" }]}>
+                {formatCurrency(invoice.tax_amount, invoice.currency)}
+              </Text>
+            </View>
+          )}
+          <View style={[styles.totalRow, styles.grandTotal, { borderTopColor: colors.border }]}>
+            <Text style={[typography.headline, { color: colors.text }]}>Total</Text>
+            <Text style={[typography.title2, { color: colors.primary }]}>
+              {formatCurrency(invoice.total, invoice.currency)}
+            </Text>
+          </View>
+        </View>
+
+        {/* Payment Link Card (if available) */}
+        {invoice.stripe_hosted_invoice_url && invoice.status !== "paid" && (
+          <Pressable
+            onPress={handleViewPaymentLink}
+            style={[
+              styles.paymentLinkCard,
+              { backgroundColor: colors.primary + "10", borderRadius: radius.md },
+            ]}
+          >
+            <CreditCard size={20} color={colors.primary} />
+            <View style={{ flex: 1, marginLeft: spacing.sm }}>
+              <Text style={[typography.footnote, { color: colors.primary, fontWeight: "600" }]}>
+                Payment Link Ready
+              </Text>
+              <Text style={[typography.caption1, { color: colors.textSecondary }]}>
+                Tap to view or share with client
+              </Text>
+            </View>
+            <ExternalLink size={18} color={colors.primary} />
+          </Pressable>
+        )}
+
+        {/* From (Business Info) */}
+        {profile?.business_name && (
+          <View style={[styles.fromSection, { borderTopColor: colors.border }]}>
+            <Text style={[typography.caption1, { color: colors.textTertiary, marginBottom: 4 }]}>
+              From
+            </Text>
+            <Text style={[typography.body, { color: colors.text, fontWeight: "500" }]}>
+              {profile.business_name}
+            </Text>
+          </View>
+        )}
       </ScrollView>
 
-      <View className="px-6 pb-6 gap-3">
+      {/* Bottom Actions */}
+      <View style={[styles.bottomActions, { borderTopColor: colors.border }]}>
         {invoice.status === "draft" && (
-          <Button title="Send Invoice" onPress={handleSendInvoice} />
+          <Button
+            title={isSending ? "Sending..." : "Send Invoice"}
+            onPress={handleSendInvoice}
+            disabled={isSending}
+          />
         )}
-        {(invoice.status === "sent" || invoice.status === "overdue") && (
-          <Button title="Mark as Paid" onPress={handleMarkAsPaid} />
+
+        {invoice.status === "sent" && (
+          <View style={styles.actionRow}>
+            <Pressable
+              onPress={handleSendInvoice}
+              style={[styles.secondaryAction, { backgroundColor: colors.backgroundSecondary }]}
+            >
+              <Share2 size={20} color={colors.text} />
+              <Text style={[typography.footnote, { color: colors.text, marginLeft: 6 }]}>
+                Resend
+              </Text>
+            </Pressable>
+            <View style={{ flex: 1, marginLeft: spacing.sm }}>
+              <Button title="Mark as Paid" onPress={handleMarkAsPaid} />
+            </View>
+          </View>
         )}
+
+        {invoice.status === "overdue" && (
+          <View style={styles.actionRow}>
+            <Pressable
+              onPress={handleSendInvoice}
+              style={[styles.secondaryAction, { backgroundColor: colors.statusOverdue + "20" }]}
+            >
+              <MessageSquare size={20} color={colors.statusOverdue} />
+              <Text style={[typography.footnote, { color: colors.statusOverdue, marginLeft: 6 }]}>
+                Remind
+              </Text>
+            </Pressable>
+            <View style={{ flex: 1, marginLeft: spacing.sm }}>
+              <Button title="Mark as Paid" onPress={handleMarkAsPaid} />
+            </View>
+          </View>
+        )}
+
         {invoice.status === "paid" && (
-          <View className="py-4 items-center">
-            <Text className="text-green-600 font-medium">
-              Paid on {formatDate(invoice.paidAt!)}
+          <View style={[styles.paidBanner, { backgroundColor: colors.statusPaid + "15" }]}>
+            <CheckCircle size={20} color={colors.statusPaid} />
+            <Text style={[typography.body, { color: colors.statusPaid, marginLeft: spacing.sm }]}>
+              Paid on {invoice.paid_at ? formatDate(invoice.paid_at) : "N/A"}
+            </Text>
+          </View>
+        )}
+
+        {invoice.status === "void" && (
+          <View style={[styles.paidBanner, { backgroundColor: colors.textTertiary + "15" }]}>
+            <Text style={[typography.body, { color: colors.textTertiary }]}>
+              This invoice has been voided
             </Text>
           </View>
         )}
@@ -165,3 +543,127 @@ export default function InvoiceDetail() {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 16,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  headerButton: {
+    padding: 8,
+    marginHorizontal: -8,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 24,
+    paddingBottom: 40,
+  },
+  clientSection: {
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  avatar: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  datesRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 24,
+  },
+  dateItem: {},
+  itemsCard: {
+    padding: 16,
+    marginBottom: 16,
+  },
+  itemRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    paddingVertical: 12,
+  },
+  itemContent: {
+    flex: 1,
+    marginRight: 12,
+  },
+  totalsCard: {
+    padding: 16,
+    marginBottom: 16,
+  },
+  totalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  grandTotal: {
+    borderTopWidth: 1,
+    marginTop: 8,
+    paddingTop: 16,
+  },
+  paymentLinkCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    marginBottom: 16,
+  },
+  fromSection: {
+    paddingTop: 24,
+    borderTopWidth: 1,
+    marginTop: 8,
+  },
+  bottomActions: {
+    padding: 24,
+    paddingBottom: 32,
+    borderTopWidth: 1,
+  },
+  actionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  secondaryAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  paidBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    borderRadius: 12,
+  },
+});

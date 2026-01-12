@@ -1,71 +1,135 @@
-import { View, Text, ScrollView, Alert } from "react-native";
+import React, { useState } from "react";
+import {
+  View,
+  Text,
+  ScrollView,
+  Alert,
+  Pressable,
+  TextInput,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { X, Check } from "lucide-react-native";
-import { Pressable } from "react-native";
+import {
+  X,
+  Check,
+  AlertTriangle,
+  Mic,
+  Edit3,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
+} from "lucide-react-native";
 import * as Haptics from "expo-haptics";
-import { Card } from "../../components/ui/Card";
-import { Button } from "../../components/ui/Button";
-import { useInvoiceStore } from "../../store/useInvoiceStore";
-import { useProfileStore } from "../../store/useProfileStore";
-import { formatCurrency, generateInvoiceNumber, generateId } from "../../lib/utils";
-import { COLORS } from "../../lib/constants";
-import { Invoice } from "../../types";
+import { useTheme } from "@/lib/theme";
+import { Button } from "@/components/ui/Button";
+import { useInvoiceStore } from "@/store/useInvoiceStore";
+import { useProfileStore } from "@/store/useProfileStore";
+import { formatCurrency, toDollars } from "@/types";
+import * as db from "@/services/database";
+
+/**
+ * Invoice Preview Screen
+ * Per design-system.md Section 3
+ *
+ * Features:
+ * - AI confidence score display
+ * - Highlight original transcript segments
+ * - Editable fields before confirmation
+ * - "Looks Wrong? Re-record" option
+ */
 
 export default function InvoicePreview() {
   const router = useRouter();
-  const { pendingInvoice, invoices, addInvoice, clearPendingInvoice } = useInvoiceStore();
+  const { colors, typography, spacing, radius } = useTheme();
+  const { pendingInvoice, clearPendingInvoice } = useInvoiceStore();
   const { profile } = useProfileStore();
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [showTranscript, setShowTranscript] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Editable fields
+  const [clientName, setClientName] = useState(pendingInvoice?.clientName || "");
+  const [items, setItems] = useState(pendingInvoice?.items || []);
 
   if (!pendingInvoice) {
     return (
-      <SafeAreaView className="flex-1 bg-white items-center justify-center">
-        <Text className="text-gray-500">No invoice data</Text>
-        <Button
-          title="Go Back"
-          variant="secondary"
-          onPress={() => router.back()}
-        />
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.emptyContainer}>
+          <Text style={[typography.body, { color: colors.textSecondary }]}>
+            No invoice data
+          </Text>
+          <Button
+            title="Go Back"
+            variant="secondary"
+            onPress={() => router.back()}
+          />
+        </View>
       </SafeAreaView>
     );
   }
 
-  const subtotal = pendingInvoice.items.reduce(
-    (sum, item) => sum + item.price * (item.quantity || 1),
+  const confidence = pendingInvoice.confidence || 0.85;
+  const confidencePercent = Math.round(confidence * 100);
+  const isLowConfidence = confidence < 0.7;
+
+  // Calculate totals (amounts in cents)
+  const subtotal = items.reduce(
+    (sum, item) => sum + (item.unitPrice || item.price * 100) * (item.quantity || 1),
     0
   );
-  const taxAmount = subtotal * (profile.taxRate / 100);
+  const taxRate = profile?.tax_rate || 0;
+  const taxAmount = Math.round(subtotal * (taxRate / 100));
   const total = subtotal + taxAmount;
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
+    setIsSaving(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    const newInvoice: Invoice = {
-      id: generateId(),
-      invoiceNumber: generateInvoiceNumber(invoices.length + 1),
-      clientName: pendingInvoice.clientName,
-      clientEmail: pendingInvoice.clientEmail,
-      clientPhone: pendingInvoice.clientPhone,
-      items: pendingInvoice.items.map((item) => ({
-        id: generateId(),
-        description: item.description,
-        quantity: item.quantity || 1,
-        price: item.price,
-      })),
-      subtotal,
-      taxRate: profile.taxRate,
-      taxAmount,
-      total,
-      status: "draft",
-      createdAt: new Date().toISOString(),
-    };
+    try {
+      // Create invoice in database
+      const invoiceData = {
+        client_name: clientName,
+        subtotal,
+        tax_amount: taxAmount,
+        total,
+        currency: profile?.default_currency || "USD",
+        status: "draft" as const,
+        notes: pendingInvoice.notes,
+      };
 
-    addInvoice(newInvoice);
-    clearPendingInvoice();
+      const newInvoice = await db.createInvoice(invoiceData);
 
-    Alert.alert("Invoice Created", `Invoice ${newInvoice.invoiceNumber} has been created.`, [
-      { text: "OK", onPress: () => router.replace("/(tabs)/invoices") },
-    ]);
+      if (newInvoice) {
+        // Create invoice items
+        for (const item of items) {
+          await db.createInvoiceItem({
+            invoice_id: newInvoice.id,
+            description: item.description,
+            quantity: item.quantity || 1,
+            unit_price: item.unitPrice || item.price * 100,
+            total: (item.unitPrice || item.price * 100) * (item.quantity || 1),
+            original_transcript_segment: item.originalTranscript,
+          });
+        }
+
+        clearPendingInvoice();
+
+        Alert.alert(
+          "Invoice Created",
+          `Invoice ${newInvoice.invoice_number} has been created.`,
+          [{ text: "OK", onPress: () => router.replace("/(tabs)/invoices") }]
+        );
+      }
+    } catch (error) {
+      console.error("Error creating invoice:", error);
+      Alert.alert("Error", "Failed to create invoice. Please try again.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCancel = () => {
@@ -74,73 +138,481 @@ export default function InvoicePreview() {
     router.back();
   };
 
+  const handleReRecord = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    clearPendingInvoice();
+    router.replace("/(tabs)");
+  };
+
+  const updateItemQuantity = (index: number, quantity: number) => {
+    const newItems = [...items];
+    newItems[index] = { ...newItems[index], quantity: Math.max(1, quantity) };
+    setItems(newItems);
+  };
+
+  const updateItemPrice = (index: number, price: number) => {
+    const newItems = [...items];
+    newItems[index] = { ...newItems[index], unitPrice: price, price: price / 100 };
+    setItems(newItems);
+  };
+
+  const updateItemDescription = (index: number, description: string) => {
+    const newItems = [...items];
+    newItems[index] = { ...newItems[index], description };
+    setItems(newItems);
+  };
+
+  const getConfidenceColor = () => {
+    if (confidence >= 0.9) return colors.statusPaid;
+    if (confidence >= 0.7) return colors.alert;
+    return colors.statusOverdue;
+  };
+
   return (
-    <SafeAreaView className="flex-1 bg-white">
-      <View className="flex-row items-center justify-between px-6 py-4 border-b border-gray-100">
-        <Pressable onPress={handleCancel} className="p-2 -ml-2">
-          <X size={24} color={COLORS.text.primary} />
-        </Pressable>
-        <Text className="text-lg font-semibold">Invoice Preview</Text>
-        <Pressable onPress={handleConfirm} className="p-2 -mr-2">
-          <Check size={24} color={COLORS.primary} />
-        </Pressable>
-      </View>
-
-      <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 40 }}>
-        <View className="px-6 pt-6">
-          <Text className="text-sm text-gray-500 mb-1">Bill To</Text>
-          <Text className="text-2xl font-bold mb-6">
-            {pendingInvoice.clientName}
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+      >
+        {/* Header */}
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          <Pressable onPress={handleCancel} style={styles.headerButton}>
+            <X size={24} color={colors.text} />
+          </Pressable>
+          <Text style={[typography.headline, { color: colors.text }]}>
+            Invoice Preview
           </Text>
+          <Pressable
+            onPress={() => setIsEditing(!isEditing)}
+            style={styles.headerButton}
+          >
+            <Edit3 size={22} color={isEditing ? colors.primary : colors.text} />
+          </Pressable>
+        </View>
 
-          <Card className="bg-gray-50 mb-6">
-            <Text className="text-sm font-medium text-gray-500 mb-4">Items</Text>
-            {pendingInvoice.items.map((item, index) => (
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* AI Confidence Banner */}
+          <View
+            style={[
+              styles.confidenceBanner,
+              {
+                backgroundColor: getConfidenceColor() + "15",
+                borderRadius: radius.md,
+              },
+            ]}
+          >
+            <View style={styles.confidenceHeader}>
+              <Sparkles size={18} color={getConfidenceColor()} />
+              <Text
+                style={[
+                  typography.footnote,
+                  { color: getConfidenceColor(), fontWeight: "600", marginLeft: spacing.xs },
+                ]}
+              >
+                AI Confidence: {confidencePercent}%
+              </Text>
+            </View>
+            {isLowConfidence && (
+              <View style={styles.warningRow}>
+                <AlertTriangle size={14} color={colors.statusOverdue} />
+                <Text
+                  style={[
+                    typography.caption1,
+                    { color: colors.statusOverdue, marginLeft: spacing.xs },
+                  ]}
+                >
+                  Low confidence - please review carefully
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Original Transcript Toggle */}
+          {pendingInvoice.originalTranscript && (
+            <Pressable
+              onPress={() => setShowTranscript(!showTranscript)}
+              style={[
+                styles.transcriptToggle,
+                { backgroundColor: colors.backgroundSecondary, borderRadius: radius.md },
+              ]}
+            >
+              <Mic size={16} color={colors.textTertiary} />
+              <Text
+                style={[
+                  typography.footnote,
+                  { color: colors.textSecondary, marginLeft: spacing.xs, flex: 1 },
+                ]}
+              >
+                Original voice recording
+              </Text>
+              {showTranscript ? (
+                <ChevronUp size={18} color={colors.textTertiary} />
+              ) : (
+                <ChevronDown size={18} color={colors.textTertiary} />
+              )}
+            </Pressable>
+          )}
+
+          {showTranscript && pendingInvoice.originalTranscript && (
+            <View
+              style={[
+                styles.transcriptBox,
+                { backgroundColor: colors.backgroundTertiary, borderRadius: radius.md },
+              ]}
+            >
+              <Text
+                style={[
+                  typography.footnote,
+                  { color: colors.textSecondary, fontStyle: "italic", lineHeight: 20 },
+                ]}
+              >
+                "{pendingInvoice.originalTranscript}"
+              </Text>
+              <Text
+                style={[
+                  typography.caption2,
+                  { color: colors.textTertiary, marginTop: spacing.sm },
+                ]}
+              >
+                Detected: {pendingInvoice.detectedLanguage || "English"}
+              </Text>
+            </View>
+          )}
+
+          {/* Bill To */}
+          <View style={styles.section}>
+            <Text style={[typography.footnote, { color: colors.textTertiary }]}>
+              Bill To
+            </Text>
+            {isEditing ? (
+              <TextInput
+                style={[
+                  styles.editableInput,
+                  typography.title2,
+                  {
+                    color: colors.text,
+                    backgroundColor: colors.backgroundSecondary,
+                    borderRadius: radius.sm,
+                  },
+                ]}
+                value={clientName}
+                onChangeText={setClientName}
+                placeholder="Client name"
+                placeholderTextColor={colors.textTertiary}
+              />
+            ) : (
+              <Text style={[typography.title2, { color: colors.text }]}>
+                {clientName}
+              </Text>
+            )}
+          </View>
+
+          {/* Line Items */}
+          <View
+            style={[
+              styles.itemsCard,
+              { backgroundColor: colors.card, borderRadius: radius.lg },
+            ]}
+          >
+            <Text
+              style={[
+                typography.footnote,
+                { color: colors.textTertiary, fontWeight: "500", marginBottom: spacing.md },
+              ]}
+            >
+              Items
+            </Text>
+            {items.map((item, index) => (
               <View
                 key={index}
-                className="flex-row justify-between items-center py-3 border-b border-gray-200 last:border-b-0"
+                style={[
+                  styles.itemRow,
+                  index < items.length - 1 && {
+                    borderBottomWidth: 1,
+                    borderBottomColor: colors.border,
+                  },
+                ]}
               >
-                <View className="flex-1">
-                  <Text className="text-base font-medium">{item.description}</Text>
-                  <Text className="text-sm text-gray-500">
-                    Qty: {item.quantity || 1}
-                  </Text>
+                <View style={styles.itemContent}>
+                  {isEditing ? (
+                    <TextInput
+                      style={[
+                        typography.body,
+                        { color: colors.text, fontWeight: "500", padding: 0 },
+                      ]}
+                      value={item.description}
+                      onChangeText={(text) => updateItemDescription(index, text)}
+                      multiline
+                    />
+                  ) : (
+                    <Text style={[typography.body, { color: colors.text, fontWeight: "500" }]}>
+                      {item.description}
+                    </Text>
+                  )}
+
+                  {/* Original transcript segment highlight */}
+                  {item.originalTranscript && (
+                    <Text
+                      style={[
+                        typography.caption2,
+                        {
+                          color: colors.textTertiary,
+                          fontStyle: "italic",
+                          marginTop: 2,
+                          backgroundColor: colors.primary + "10",
+                          paddingHorizontal: 4,
+                          borderRadius: 2,
+                        },
+                      ]}
+                    >
+                      "{item.originalTranscript}"
+                    </Text>
+                  )}
+
+                  <View style={styles.itemMeta}>
+                    {isEditing ? (
+                      <View style={styles.editableRow}>
+                        <Text style={[typography.caption1, { color: colors.textTertiary }]}>
+                          Qty:{" "}
+                        </Text>
+                        <TextInput
+                          style={[
+                            typography.caption1,
+                            styles.smallInput,
+                            {
+                              color: colors.text,
+                              backgroundColor: colors.backgroundSecondary,
+                              borderRadius: 4,
+                            },
+                          ]}
+                          value={String(item.quantity || 1)}
+                          onChangeText={(text) =>
+                            updateItemQuantity(index, parseInt(text) || 1)
+                          }
+                          keyboardType="numeric"
+                        />
+                        <Text
+                          style={[
+                            typography.caption1,
+                            { color: colors.textTertiary, marginLeft: spacing.sm },
+                          ]}
+                        >
+                          @ $
+                        </Text>
+                        <TextInput
+                          style={[
+                            typography.caption1,
+                            styles.smallInput,
+                            {
+                              color: colors.text,
+                              backgroundColor: colors.backgroundSecondary,
+                              borderRadius: 4,
+                            },
+                          ]}
+                          value={String((item.unitPrice || item.price * 100) / 100)}
+                          onChangeText={(text) =>
+                            updateItemPrice(index, parseFloat(text) * 100 || 0)
+                          }
+                          keyboardType="decimal-pad"
+                        />
+                      </View>
+                    ) : (
+                      <Text style={[typography.caption1, { color: colors.textTertiary }]}>
+                        Qty: {item.quantity || 1}
+                      </Text>
+                    )}
+                  </View>
                 </View>
-                <Text className="text-base font-semibold">
-                  {formatCurrency(item.price)}
+                <Text style={[typography.body, { color: colors.text, fontWeight: "600" }]}>
+                  {formatCurrency(
+                    (item.unitPrice || item.price * 100) * (item.quantity || 1),
+                    profile?.default_currency || "USD"
+                  )}
                 </Text>
               </View>
             ))}
-          </Card>
+          </View>
 
-          <View className="bg-gray-50 rounded-2xl p-5">
-            <View className="flex-row justify-between mb-2">
-              <Text className="text-gray-500">Subtotal</Text>
-              <Text className="font-medium">{formatCurrency(subtotal)}</Text>
+          {/* Totals */}
+          <View
+            style={[
+              styles.totalsCard,
+              { backgroundColor: colors.backgroundSecondary, borderRadius: radius.lg },
+            ]}
+          >
+            <View style={styles.totalRow}>
+              <Text style={[typography.body, { color: colors.textSecondary }]}>
+                Subtotal
+              </Text>
+              <Text style={[typography.body, { color: colors.text, fontWeight: "500" }]}>
+                {formatCurrency(subtotal, profile?.default_currency || "USD")}
+              </Text>
             </View>
-            {profile.taxRate > 0 && (
-              <View className="flex-row justify-between mb-2">
-                <Text className="text-gray-500">Tax ({profile.taxRate}%)</Text>
-                <Text className="font-medium">{formatCurrency(taxAmount)}</Text>
+            {taxRate > 0 && (
+              <View style={styles.totalRow}>
+                <Text style={[typography.body, { color: colors.textSecondary }]}>
+                  Tax ({taxRate}%)
+                </Text>
+                <Text style={[typography.body, { color: colors.text, fontWeight: "500" }]}>
+                  {formatCurrency(taxAmount, profile?.default_currency || "USD")}
+                </Text>
               </View>
             )}
-            <View className="flex-row justify-between pt-3 border-t border-gray-200">
-              <Text className="text-lg font-bold">Total</Text>
-              <Text className="text-lg font-bold" style={{ color: COLORS.primary }}>
-                {formatCurrency(total)}
+            <View
+              style={[
+                styles.totalRow,
+                styles.grandTotal,
+                { borderTopColor: colors.border },
+              ]}
+            >
+              <Text style={[typography.headline, { color: colors.text }]}>Total</Text>
+              <Text style={[typography.title2, { color: colors.primary }]}>
+                {formatCurrency(total, profile?.default_currency || "USD")}
               </Text>
             </View>
           </View>
 
-          <Text className="text-center text-gray-400 text-sm mt-6">
-            Detected language: {pendingInvoice.detectedLanguage}
-          </Text>
-        </View>
-      </ScrollView>
+          {/* Re-record Option */}
+          <Pressable onPress={handleReRecord} style={styles.reRecordButton}>
+            <AlertTriangle size={16} color={colors.textTertiary} />
+            <Text
+              style={[
+                typography.footnote,
+                { color: colors.textTertiary, marginLeft: spacing.xs },
+              ]}
+            >
+              Looks wrong? Re-record
+            </Text>
+          </Pressable>
+        </ScrollView>
 
-      <View className="px-6 pb-6">
-        <Button title="Create Invoice" onPress={handleConfirm} />
-      </View>
+        {/* Bottom Action */}
+        <View style={[styles.bottomAction, { borderTopColor: colors.border }]}>
+          <Button
+            title={isSaving ? "Creating..." : "Create Invoice"}
+            onPress={handleConfirm}
+            disabled={isSaving || !clientName.trim() || items.length === 0}
+          />
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 16,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  headerButton: {
+    padding: 8,
+    marginHorizontal: -8,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 24,
+    paddingBottom: 40,
+  },
+  confidenceBanner: {
+    padding: 12,
+    marginBottom: 16,
+  },
+  confidenceHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  warningRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 8,
+  },
+  transcriptToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    marginBottom: 8,
+  },
+  transcriptBox: {
+    padding: 12,
+    marginBottom: 16,
+  },
+  section: {
+    marginBottom: 24,
+  },
+  editableInput: {
+    padding: 8,
+    marginTop: 4,
+  },
+  itemsCard: {
+    padding: 16,
+    marginBottom: 16,
+  },
+  itemRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    paddingVertical: 12,
+  },
+  itemContent: {
+    flex: 1,
+    marginRight: 12,
+  },
+  itemMeta: {
+    marginTop: 4,
+  },
+  editableRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  smallInput: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    minWidth: 40,
+    textAlign: "center",
+  },
+  totalsCard: {
+    padding: 16,
+    marginBottom: 24,
+  },
+  totalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  grandTotal: {
+    borderTopWidth: 1,
+    marginTop: 8,
+    paddingTop: 16,
+  },
+  reRecordButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 12,
+  },
+  bottomAction: {
+    padding: 24,
+    paddingBottom: 32,
+    borderTopWidth: 1,
+  },
+});

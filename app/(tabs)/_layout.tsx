@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { Home, FileText, User } from "lucide-react-native";
+import { Home, FileText, Users, User } from "lucide-react-native";
 import { useTheme } from "../../lib/theme";
 import { View, StyleSheet } from "react-native";
 
@@ -52,6 +52,17 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <View style={focused ? styles.activeIconContainer : undefined}>
               <FileText size={24} color={color} strokeWidth={focused ? 2.5 : 2} />
+            </View>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="clients"
+        options={{
+          title: "Clients",
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? styles.activeIconContainer : undefined}>
+              <Users size={24} color={color} strokeWidth={focused ? 2.5 : 2} />
             </View>
           ),
         }}

@@ -1,21 +1,84 @@
-import { View, Text, ScrollView, StyleSheet, TextInput, Pressable, Animated, Alert } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  Pressable,
+  Animated,
+  Alert,
+  Switch,
+  Modal,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRef, useEffect } from "react";
-import { Camera, Check, Building2 } from "lucide-react-native";
+import { useRouter } from "expo-router";
+import {
+  Camera,
+  Check,
+  Building2,
+  Bell,
+  Mail,
+  MessageSquare,
+  CreditCard,
+  ChevronRight,
+  Settings,
+  Clock,
+  Edit3,
+  Download,
+  Cloud,
+  CloudOff,
+  RefreshCw,
+} from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import { Image } from "react-native";
-import { useProfileStore } from "../../store/useProfileStore";
-import { useTheme, typography, spacing, radius } from "../../lib/theme";
+import { useProfileStore } from "@/store/useProfileStore";
+import { useReminderStore } from "@/store/useReminderStore";
+import { useOfflineStore } from "@/store/useOfflineStore";
+import { useTheme } from "@/lib/theme";
+import { Button } from "@/components/ui/Button";
+
+/**
+ * Profile Screen
+ * Per design-system.md - includes Stripe status and reminder settings
+ */
 
 export default function Profile() {
-  const { colors, isDark } = useTheme();
-  const { profile, updateProfile } = useProfileStore();
+  const router = useRouter();
+  const { colors, typography, spacing, radius, isDark } = useTheme();
+  const { profile, updateProfile, fetchProfile, isSaving } = useProfileStore();
+  const {
+    settings: reminderSettings,
+    fetchSettings: fetchReminderSettings,
+    toggleEnabled,
+    toggleSMS,
+    toggleEmail,
+    setDayIntervals,
+    setMessageTemplate,
+    isSaving: isSavingReminders,
+  } = useReminderStore();
+  const {
+    isOnline,
+    isSyncing,
+    pendingUploads,
+    pendingOperations,
+    syncNow,
+    initialize: initOffline,
+  } = useOfflineStore();
+
+  const [showReminderModal, setShowReminderModal] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState(false);
+  const [templateText, setTemplateText] = useState("");
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
 
   useEffect(() => {
+    fetchProfile();
+    fetchReminderSettings();
+    initOffline();
+
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -31,6 +94,12 @@ export default function Profile() {
     ]).start();
   }, []);
 
+  useEffect(() => {
+    if (reminderSettings?.message_template) {
+      setTemplateText(reminderSettings.message_template);
+    }
+  }, [reminderSettings]);
+
   const pickImage = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -41,16 +110,98 @@ export default function Profile() {
     });
 
     if (!result.canceled && result.assets[0]) {
-      updateProfile({ logoUrl: result.assets[0].uri });
+      updateProfile({ logo_url: result.assets[0].uri });
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     Alert.alert("Saved", "Your profile has been updated.");
   };
 
-  const styles = createStyles(colors, isDark);
+  const handleToggleReminders = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      await toggleEnabled();
+    } catch (error) {
+      Alert.alert("Error", "Failed to update reminder settings");
+    }
+  };
+
+  const handleToggleSMS = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      await toggleSMS();
+    } catch (error) {
+      Alert.alert("Error", "Failed to update SMS settings");
+    }
+  };
+
+  const handleToggleEmail = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      await toggleEmail();
+    } catch (error) {
+      Alert.alert("Error", "Failed to update email settings");
+    }
+  };
+
+  const handleSaveTemplate = async () => {
+    try {
+      await setMessageTemplate(templateText);
+      setEditingTemplate(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      Alert.alert("Error", "Failed to save template");
+    }
+  };
+
+  const handleDayIntervalToggle = async (day: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const currentIntervals = reminderSettings?.day_intervals || [3, 7, 14];
+    let newIntervals: number[];
+
+    if (currentIntervals.includes(day)) {
+      newIntervals = currentIntervals.filter((d) => d !== day);
+    } else {
+      newIntervals = [...currentIntervals, day].sort((a, b) => a - b);
+    }
+
+    if (newIntervals.length === 0) {
+      Alert.alert("Error", "You must have at least one reminder interval");
+      return;
+    }
+
+    try {
+      await setDayIntervals(newIntervals);
+    } catch (error) {
+      Alert.alert("Error", "Failed to update intervals");
+    }
+  };
+
+  const handleSync = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      const result = await syncNow();
+      if (result.uploads > 0 || result.operations > 0) {
+        Alert.alert(
+          "Sync Complete",
+          `Synced ${result.uploads} uploads and ${result.operations} operations`
+        );
+      } else if (result.errors > 0) {
+        Alert.alert("Sync Issue", `${result.errors} items failed to sync`);
+      } else {
+        Alert.alert("All Synced", "Everything is up to date");
+      }
+    } catch (error) {
+      Alert.alert("Sync Failed", "Failed to sync data");
+    }
+  };
+
+  const stripeConnected = profile?.charges_enabled && profile?.payouts_enabled;
+  const totalPending = pendingUploads + pendingOperations;
+
+  const styles = createStyles(colors, isDark, spacing, radius, typography);
 
   const InputField = ({
     label,
@@ -84,6 +235,39 @@ export default function Profile() {
     </View>
   );
 
+  const SettingRow = ({
+    icon,
+    title,
+    subtitle,
+    rightElement,
+    onPress,
+  }: {
+    icon: React.ReactNode;
+    title: string;
+    subtitle?: string;
+    rightElement?: React.ReactNode;
+    onPress?: () => void;
+  }) => (
+    <Pressable
+      style={styles.settingRow}
+      onPress={onPress}
+      disabled={!onPress}
+    >
+      <View style={[styles.settingIcon, { backgroundColor: colors.primary + "15" }]}>
+        {icon}
+      </View>
+      <View style={styles.settingContent}>
+        <Text style={[typography.body, { color: colors.text }]}>{title}</Text>
+        {subtitle && (
+          <Text style={[typography.caption1, { color: colors.textTertiary }]}>
+            {subtitle}
+          </Text>
+        )}
+      </View>
+      {rightElement}
+    </Pressable>
+  );
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScrollView
@@ -94,28 +278,23 @@ export default function Profile() {
         <Animated.View
           style={[
             styles.header,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            },
+            { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
           ]}
         >
           <Text style={styles.title}>Profile</Text>
           <Text style={styles.subtitle}>Business information</Text>
         </Animated.View>
 
+        {/* Logo Section */}
         <Animated.View
           style={[
             styles.logoSection,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            },
+            { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
           ]}
         >
           <Pressable onPress={pickImage} style={styles.logoContainer}>
-            {profile.logoUrl ? (
-              <Image source={{ uri: profile.logoUrl }} style={styles.logoImage} />
+            {profile?.logo_url ? (
+              <Image source={{ uri: profile.logo_url }} style={styles.logoImage} />
             ) : (
               <View style={styles.logoPlaceholder}>
                 <Building2 size={32} color={colors.textTertiary} />
@@ -128,73 +307,232 @@ export default function Profile() {
           <Text style={styles.logoHint}>Tap to add logo</Text>
         </Animated.View>
 
+        {/* Business Info Form */}
         <Animated.View
           style={[
             styles.formSection,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            },
+            { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
           ]}
         >
           <InputField
             label="Business Name"
-            value={profile.businessName}
-            onChangeText={(text) => updateProfile({ businessName: text })}
+            value={profile?.business_name || ""}
+            onChangeText={(text) => updateProfile({ business_name: text })}
             placeholder="Your Business Name"
             autoCapitalize="words"
           />
 
           <InputField
             label="Owner Name"
-            value={profile.ownerName}
-            onChangeText={(text) => updateProfile({ ownerName: text })}
+            value={profile?.full_name || ""}
+            onChangeText={(text) => updateProfile({ full_name: text })}
             placeholder="Your Full Name"
             autoCapitalize="words"
           />
 
           <InputField
-            label="Email"
-            value={profile.email}
-            onChangeText={(text) => updateProfile({ email: text })}
-            placeholder="email@example.com"
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-
-          <InputField
-            label="Phone"
-            value={profile.phone}
-            onChangeText={(text) => updateProfile({ phone: text })}
-            placeholder="(555) 123-4567"
-            keyboardType="phone-pad"
-          />
-
-          <InputField
-            label="Business Address"
-            value={profile.address}
-            onChangeText={(text) => updateProfile({ address: text })}
-            placeholder="123 Main St, City, State 12345"
-            multiline
-          />
-
-          <InputField
             label="Tax Rate (%)"
-            value={profile.taxRate?.toString() || "0"}
-            onChangeText={(text) => updateProfile({ taxRate: parseFloat(text) || 0 })}
+            value={profile?.tax_rate?.toString() || "0"}
+            onChangeText={(text) => updateProfile({ tax_rate: parseFloat(text) || 0 })}
             placeholder="0"
             keyboardType="decimal-pad"
           />
         </Animated.View>
 
+        {/* Stripe Connect Section */}
         <Animated.View
           style={[
-            styles.saveButtonContainer,
-            {
-              opacity: fadeAnim,
-            },
+            styles.section,
+            { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
           ]}
         >
+          <Text style={styles.sectionTitle}>Payments</Text>
+          <View style={styles.settingsCard}>
+            <SettingRow
+              icon={<CreditCard size={20} color={colors.primary} />}
+              title="Stripe Connect"
+              subtitle={
+                stripeConnected
+                  ? "Connected - accepting payments"
+                  : "Connect to accept card payments"
+              }
+              rightElement={
+                stripeConnected ? (
+                  <View style={[styles.badge, { backgroundColor: colors.statusPaid + "20" }]}>
+                    <Text style={[typography.caption2, { color: colors.statusPaid, fontWeight: "600" }]}>
+                      Active
+                    </Text>
+                  </View>
+                ) : (
+                  <ChevronRight size={20} color={colors.textTertiary} />
+                )
+              }
+              onPress={() => router.push("/stripe/onboarding")}
+            />
+          </View>
+        </Animated.View>
+
+        {/* Auto-Reminders Section ("Bad Cop") */}
+        <Animated.View
+          style={[
+            styles.section,
+            { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+          ]}
+        >
+          <Text style={styles.sectionTitle}>Auto-Reminders</Text>
+          <View style={styles.settingsCard}>
+            <SettingRow
+              icon={<Bell size={20} color={colors.primary} />}
+              title="Enable Auto-Reminders"
+              subtitle="Automatically remind clients about overdue invoices"
+              rightElement={
+                <Switch
+                  value={reminderSettings?.enabled || false}
+                  onValueChange={handleToggleReminders}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  thumbColor="#FFFFFF"
+                />
+              }
+            />
+
+            {reminderSettings?.enabled && (
+              <>
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+                <SettingRow
+                  icon={<MessageSquare size={20} color={colors.primary} />}
+                  title="SMS Reminders"
+                  subtitle="Send text message reminders"
+                  rightElement={
+                    <Switch
+                      value={reminderSettings?.sms_enabled || false}
+                      onValueChange={handleToggleSMS}
+                      trackColor={{ false: colors.border, true: colors.primary }}
+                      thumbColor="#FFFFFF"
+                    />
+                  }
+                />
+
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+                <SettingRow
+                  icon={<Mail size={20} color={colors.primary} />}
+                  title="Email Reminders"
+                  subtitle="Send email reminders"
+                  rightElement={
+                    <Switch
+                      value={reminderSettings?.email_enabled || false}
+                      onValueChange={handleToggleEmail}
+                      trackColor={{ false: colors.border, true: colors.primary }}
+                      thumbColor="#FFFFFF"
+                    />
+                  }
+                />
+
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+                <SettingRow
+                  icon={<Clock size={20} color={colors.primary} />}
+                  title="Reminder Schedule"
+                  subtitle="Configure when reminders are sent"
+                  rightElement={<ChevronRight size={20} color={colors.textTertiary} />}
+                  onPress={() => setShowReminderModal(true)}
+                />
+
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+                <SettingRow
+                  icon={<Edit3 size={20} color={colors.primary} />}
+                  title="Message Template"
+                  subtitle="Customize reminder message"
+                  rightElement={<ChevronRight size={20} color={colors.textTertiary} />}
+                  onPress={() => setEditingTemplate(true)}
+                />
+              </>
+            )}
+          </View>
+        </Animated.View>
+
+        {/* Data & Sync Section */}
+        <Animated.View
+          style={[
+            styles.section,
+            { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+          ]}
+        >
+          <Text style={styles.sectionTitle}>Data & Sync</Text>
+          <View style={styles.settingsCard}>
+            <SettingRow
+              icon={
+                isOnline ? (
+                  <Cloud size={20} color={colors.primary} />
+                ) : (
+                  <CloudOff size={20} color={colors.statusOverdue} />
+                )
+              }
+              title={isOnline ? "Online" : "Offline"}
+              subtitle={
+                totalPending > 0
+                  ? `${totalPending} item${totalPending !== 1 ? "s" : ""} pending sync`
+                  : "All data synced"
+              }
+              rightElement={
+                isOnline && totalPending > 0 ? (
+                  <Pressable
+                    style={[styles.syncButton, { backgroundColor: colors.primary }]}
+                    onPress={handleSync}
+                    disabled={isSyncing}
+                  >
+                    <RefreshCw
+                      size={14}
+                      color="#FFFFFF"
+                      style={isSyncing ? { opacity: 0.5 } : undefined}
+                    />
+                    <Text style={styles.syncButtonText}>
+                      {isSyncing ? "Syncing" : "Sync"}
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <View
+                    style={[
+                      styles.badge,
+                      {
+                        backgroundColor: isOnline
+                          ? colors.statusPaid + "20"
+                          : colors.statusOverdue + "20",
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        typography.caption2,
+                        {
+                          color: isOnline ? colors.statusPaid : colors.statusOverdue,
+                          fontWeight: "600",
+                        },
+                      ]}
+                    >
+                      {isOnline ? "Synced" : "Offline"}
+                    </Text>
+                  </View>
+                )
+              }
+            />
+
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+            <SettingRow
+              icon={<Download size={20} color={colors.primary} />}
+              title="Export Data"
+              subtitle="Export invoices for QuickBooks"
+              rightElement={<ChevronRight size={20} color={colors.textTertiary} />}
+              onPress={() => router.push("/export")}
+            />
+          </View>
+        </Animated.View>
+
+        {/* Save Button */}
+        <Animated.View style={[styles.saveButtonContainer, { opacity: fadeAnim }]}>
           <Pressable
             style={({ pressed }) => [
               styles.saveButton,
@@ -203,15 +541,130 @@ export default function Profile() {
             onPress={handleSave}
           >
             <Check size={20} color="#FFFFFF" />
-            <Text style={styles.saveButtonText}>Save Profile</Text>
+            <Text style={styles.saveButtonText}>
+              {isSaving ? "Saving..." : "Save Profile"}
+            </Text>
           </Pressable>
         </Animated.View>
       </ScrollView>
+
+      {/* Reminder Schedule Modal */}
+      <Modal
+        visible={showReminderModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowReminderModal(false)}
+      >
+        <SafeAreaView style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+          <View style={styles.modalHeader}>
+            <Pressable onPress={() => setShowReminderModal(false)}>
+              <Text style={[typography.body, { color: colors.primary }]}>Close</Text>
+            </Pressable>
+            <Text style={[typography.headline, { color: colors.text }]}>Reminder Schedule</Text>
+            <View style={{ width: 50 }} />
+          </View>
+
+          <View style={styles.modalContent}>
+            <Text style={[typography.footnote, { color: colors.textSecondary, marginBottom: spacing.md }]}>
+              Send reminders on these days after the due date:
+            </Text>
+
+            {[3, 7, 14, 21, 30].map((day) => (
+              <Pressable
+                key={day}
+                style={[
+                  styles.dayOption,
+                  {
+                    backgroundColor: (reminderSettings?.day_intervals || []).includes(day)
+                      ? colors.primary + "15"
+                      : colors.backgroundSecondary,
+                    borderRadius: radius.md,
+                  },
+                ]}
+                onPress={() => handleDayIntervalToggle(day)}
+              >
+                <Text style={[typography.body, { color: colors.text }]}>
+                  {day} days overdue
+                </Text>
+                {(reminderSettings?.day_intervals || []).includes(day) && (
+                  <Check size={20} color={colors.primary} />
+                )}
+              </Pressable>
+            ))}
+
+            <Text style={[typography.caption1, { color: colors.textTertiary, marginTop: spacing.lg }]}>
+              Reminders are sent automatically at 9 AM in your timezone
+            </Text>
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Message Template Modal */}
+      <Modal
+        visible={editingTemplate}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setEditingTemplate(false)}
+      >
+        <SafeAreaView style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+          <View style={styles.modalHeader}>
+            <Pressable onPress={() => setEditingTemplate(false)}>
+              <Text style={[typography.body, { color: colors.textSecondary }]}>Cancel</Text>
+            </Pressable>
+            <Text style={[typography.headline, { color: colors.text }]}>Message Template</Text>
+            <Pressable onPress={handleSaveTemplate}>
+              <Text style={[typography.body, { color: colors.primary, fontWeight: "600" }]}>
+                Save
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.modalContent}>
+            <Text style={[typography.footnote, { color: colors.textSecondary, marginBottom: spacing.sm }]}>
+              Available variables:
+            </Text>
+            <Text style={[typography.caption1, { color: colors.textTertiary, marginBottom: spacing.md }]}>
+              {"{{invoice_number}}, {{business_name}}, {{total}}, {{days_overdue}}, {{payment_link}}"}
+            </Text>
+
+            <TextInput
+              style={[
+                styles.templateInput,
+                {
+                  backgroundColor: colors.backgroundSecondary,
+                  color: colors.text,
+                  borderRadius: radius.md,
+                },
+              ]}
+              value={templateText}
+              onChangeText={setTemplateText}
+              multiline
+              numberOfLines={6}
+              placeholder="Enter your reminder message template..."
+              placeholderTextColor={colors.textTertiary}
+            />
+
+            <View style={[styles.previewCard, { backgroundColor: colors.card, borderRadius: radius.md }]}>
+              <Text style={[typography.caption1, { color: colors.textSecondary, marginBottom: spacing.xs }]}>
+                Preview:
+              </Text>
+              <Text style={[typography.footnote, { color: colors.text, lineHeight: 20 }]}>
+                {templateText
+                  .replace(/\{\{invoice_number\}\}/g, "INV-0042")
+                  .replace(/\{\{business_name\}\}/g, profile?.business_name || "Your Business")
+                  .replace(/\{\{total\}\}/g, "$1,250")
+                  .replace(/\{\{days_overdue\}\}/g, "7")
+                  .replace(/\{\{payment_link\}\}/g, "https://pay.stripe.com/...")}
+              </Text>
+            </View>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
 
-const createStyles = (colors: any, isDark: boolean) =>
+const createStyles = (colors: any, isDark: boolean, spacing: any, radius: any, typography: any) =>
   StyleSheet.create({
     container: {
       flex: 1,
@@ -307,9 +760,64 @@ const createStyles = (colors: any, isDark: boolean) =>
       minHeight: 80,
       textAlignVertical: "top",
     },
+    section: {
+      paddingHorizontal: spacing.lg,
+      marginTop: spacing.lg,
+    },
+    sectionTitle: {
+      ...typography.footnote,
+      color: colors.textTertiary,
+      fontWeight: "600",
+      marginBottom: spacing.sm,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+    settingsCard: {
+      backgroundColor: colors.card,
+      borderRadius: radius.lg,
+      overflow: "hidden",
+    },
+    settingRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      padding: spacing.md,
+    },
+    settingIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: spacing.sm,
+    },
+    settingContent: {
+      flex: 1,
+    },
+    badge: {
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 12,
+    },
+    syncButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 8,
+      gap: 4,
+    },
+    syncButtonText: {
+      color: "#FFFFFF",
+      fontSize: 13,
+      fontWeight: "600",
+    },
+    divider: {
+      height: 1,
+      marginLeft: 56,
+    },
     saveButtonContainer: {
       paddingHorizontal: spacing.lg,
-      paddingTop: spacing.lg,
+      paddingTop: spacing.xl,
     },
     saveButton: {
       flexDirection: "row",
@@ -332,5 +840,38 @@ const createStyles = (colors: any, isDark: boolean) =>
     saveButtonText: {
       ...typography.headline,
       color: "#FFFFFF",
+    },
+    // Modal Styles
+    modalContainer: {
+      flex: 1,
+    },
+    modalHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    modalContent: {
+      padding: spacing.lg,
+    },
+    dayOption: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: spacing.md,
+      marginBottom: spacing.sm,
+    },
+    templateInput: {
+      padding: spacing.md,
+      minHeight: 150,
+      textAlignVertical: "top",
+      ...typography.body,
+    },
+    previewCard: {
+      padding: spacing.md,
+      marginTop: spacing.md,
     },
   });

@@ -1,31 +1,54 @@
-import { View, Text, ScrollView, StyleSheet, Animated, Pressable } from "react-native";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  Animated,
+  Pressable,
+  RefreshControl,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { useState, useEffect, useRef } from "react";
-import { Moon, Sun, TrendingUp, Clock } from "lucide-react-native";
+import { Moon, Sun, TrendingUp, Clock, AlertCircle, CheckCircle } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
-import { VoiceButton } from "../../components/VoiceButton";
-import { RecordingOverlay } from "../../components/RecordingOverlay";
-import { useInvoiceStore } from "../../store/useInvoiceStore";
-import { useProfileStore } from "../../store/useProfileStore";
-import { formatCurrency } from "../../lib/utils";
-import { useTheme, typography, spacing, radius } from "../../lib/theme";
-import { startRecording, stopRecording } from "../../services/audio";
-import { transcribeAudio, parseInvoice } from "../../services/ai";
+import { VoiceButton } from "@/components/VoiceButton";
+import { RecordingOverlay } from "@/components/RecordingOverlay";
+import { AnimatedCurrency, PulseNumber } from "@/components/AnimatedNumber";
+import { useDashboardStore } from "@/store/useDashboardStore";
+import { useProfileStore } from "@/store/useProfileStore";
+import { useTheme } from "@/lib/theme";
+import { startRecording, stopRecording } from "@/services/audio";
+import { processVoiceToInvoice } from "@/services/ai";
+import { useInvoiceStore } from "@/store/useInvoiceStore";
+
+/**
+ * Dashboard Screen
+ * Per design-system.md "Pulse UI" with animated numbers
+ */
 
 export default function Dashboard() {
   const router = useRouter();
-  const { isDark, toggleTheme, colors } = useTheme();
-  const { invoices, setPendingInvoice } = useInvoiceStore();
-  const { profile } = useProfileStore();
+  const { isDark, toggleTheme, colors, typography, spacing, radius } = useTheme();
+
+  const { stats, isLoading, fetchDashboardStats } = useDashboardStore();
+  const { profile, fetchProfile } = useProfileStore();
+  const { setPendingInvoice } = useInvoiceStore();
+
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
   useEffect(() => {
+    // Initial data fetch
+    fetchDashboardStats();
+    fetchProfile();
+
+    // Entry animation
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -41,6 +64,7 @@ export default function Dashboard() {
     ]).start();
   }, []);
 
+  // Recording timer
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     if (isRecording) {
@@ -53,16 +77,16 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [isRecording]);
 
-  const totalRevenue = invoices
-    .filter((inv) => inv.status === "paid")
-    .reduce((sum, inv) => sum + inv.total, 0);
-
-  const pendingAmount = invoices
-    .filter((inv) => inv.status === "sent" || inv.status === "overdue")
-    .reduce((sum, inv) => sum + inv.total, 0);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await Promise.all([fetchDashboardStats(), fetchProfile()]);
+    setRefreshing(false);
+  }, [fetchDashboardStats, fetchProfile]);
 
   const handlePressIn = async () => {
     setIsRecording(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     await startRecording();
   };
 
@@ -71,10 +95,14 @@ export default function Dashboard() {
     const audioUri = await stopRecording();
 
     if (audioUri) {
-      const transcript = await transcribeAudio(audioUri);
-      const parsedInvoice = await parseInvoice(transcript);
-      setPendingInvoice(parsedInvoice);
-      router.push("/invoice/preview");
+      try {
+        const result = await processVoiceToInvoice(audioUri);
+        setPendingInvoice(result.parsedInvoice);
+        router.push("/invoice/preview");
+      } catch (error) {
+        console.error("Error processing voice:", error);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
     }
   };
 
@@ -83,7 +111,17 @@ export default function Dashboard() {
     toggleTheme();
   };
 
-  const styles = createStyles(colors, isDark);
+  // Format currency for display (amounts in cents)
+  const formatCurrency = (cents: number) => {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: profile?.default_currency || "USD",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(cents / 100);
+  };
+
+  const styles = createStyles(colors, isDark, spacing, radius, typography);
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -91,7 +129,15 @@ export default function Dashboard() {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+          />
+        }
       >
+        {/* Header */}
         <Animated.View
           style={[
             styles.header,
@@ -102,11 +148,9 @@ export default function Dashboard() {
           ]}
         >
           <View>
-            <Text style={styles.greeting}>
-              {getGreeting()}
-            </Text>
+            <Text style={styles.greeting}>{getGreeting()}</Text>
             <Text style={styles.businessName}>
-              {profile.businessName || "ContractorPro"}
+              {profile?.business_name || "ContractorPro"}
             </Text>
           </View>
           <Pressable onPress={handleThemeToggle} style={styles.themeButton}>
@@ -118,6 +162,7 @@ export default function Dashboard() {
           </Pressable>
         </Animated.View>
 
+        {/* Main Revenue Card - Per design-system.md "Pulse UI" */}
         <Animated.View
           style={[
             styles.mainCard,
@@ -133,14 +178,25 @@ export default function Dashboard() {
             </View>
             <Text style={styles.mainCardLabel}>Total Revenue</Text>
           </View>
-          <Text style={styles.mainCardAmount}>
-            {formatCurrency(totalRevenue)}
-          </Text>
+
+          {/* Animated Amount - The "Pulse" */}
+          <AnimatedCurrency
+            cents={stats?.totalRevenue || 0}
+            currency={profile?.default_currency || "USD"}
+            style={styles.mainCardAmount}
+            duration={1000}
+          />
+
           <Text style={styles.mainCardSubtext}>
-            {invoices.filter((inv) => inv.status === "paid").length} paid invoices
+            <PulseNumber
+              value={stats?.paidInvoicesCount || 0}
+              style={styles.mainCardSubtext}
+            />{" "}
+            paid invoices
           </Text>
         </Animated.View>
 
+        {/* Stats Row */}
         <Animated.View
           style={[
             styles.statsRow,
@@ -150,27 +206,94 @@ export default function Dashboard() {
             },
           ]}
         >
+          {/* Pending Card */}
           <View style={[styles.statCard, styles.statCardPending]}>
             <View style={styles.statIconContainer}>
               <Clock size={18} color={colors.alert} />
             </View>
             <Text style={styles.statLabel}>Pending</Text>
-            <Text style={[styles.statAmount, { color: colors.alert }]}>
-              {formatCurrency(pendingAmount)}
+            <AnimatedCurrency
+              cents={stats?.pendingAmount || 0}
+              currency={profile?.default_currency || "USD"}
+              style={[styles.statAmount, { color: colors.alert }]}
+              duration={800}
+            />
+            <Text style={styles.statSubtext}>
+              {stats?.pendingInvoicesCount || 0} invoices
             </Text>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Invoices</Text>
-            <Text style={styles.statAmount}>{invoices.length}</Text>
-            <Text style={styles.statSubtext}>total created</Text>
+
+          {/* Overdue Card */}
+          <View style={[styles.statCard, stats?.overdueAmount > 0 && styles.statCardOverdue]}>
+            <View style={styles.statIconContainer}>
+              {(stats?.overdueAmount || 0) > 0 ? (
+                <AlertCircle size={18} color={colors.statusOverdue} />
+              ) : (
+                <CheckCircle size={18} color={colors.statusPaid} />
+              )}
+            </View>
+            <Text style={styles.statLabel}>
+              {(stats?.overdueAmount || 0) > 0 ? "Overdue" : "All Clear"}
+            </Text>
+            {(stats?.overdueAmount || 0) > 0 ? (
+              <>
+                <AnimatedCurrency
+                  cents={stats?.overdueAmount || 0}
+                  currency={profile?.default_currency || "USD"}
+                  style={[styles.statAmount, { color: colors.statusOverdue }]}
+                  duration={800}
+                />
+                <Text style={styles.statSubtext}>
+                  {stats?.overdueInvoicesCount || 0} invoices
+                </Text>
+              </>
+            ) : (
+              <Text style={[styles.statAmount, { color: colors.statusPaid }]}>
+                No overdue
+              </Text>
+            )}
           </View>
         </Animated.View>
 
+        {/* Quick Stats */}
+        <Animated.View
+          style={[
+            styles.quickStats,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
+          <View style={styles.quickStatItem}>
+            <Text style={styles.quickStatValue}>
+              {stats?.totalInvoicesCount || 0}
+            </Text>
+            <Text style={styles.quickStatLabel}>Total Invoices</Text>
+          </View>
+          <View style={[styles.quickStatDivider, { backgroundColor: colors.border }]} />
+          <View style={styles.quickStatItem}>
+            <Text style={styles.quickStatValue}>
+              {stats?.totalClientsCount || 0}
+            </Text>
+            <Text style={styles.quickStatLabel}>Clients</Text>
+          </View>
+          <View style={[styles.quickStatDivider, { backgroundColor: colors.border }]} />
+          <View style={styles.quickStatItem}>
+            <Text style={styles.quickStatValue}>
+              {stats?.thisMonthInvoicesCount || 0}
+            </Text>
+            <Text style={styles.quickStatLabel}>This Month</Text>
+          </View>
+        </Animated.View>
+
+        {/* Voice Hint */}
         <View style={styles.voiceSection}>
           <Text style={styles.voiceHint}>Hold to create invoice</Text>
         </View>
       </ScrollView>
 
+      {/* Voice Button */}
       <View style={styles.voiceButtonContainer}>
         <VoiceButton
           onPressIn={handlePressIn}
@@ -191,7 +314,13 @@ function getGreeting() {
   return "Good evening";
 }
 
-const createStyles = (colors: any, isDark: boolean) =>
+const createStyles = (
+  colors: any,
+  isDark: boolean,
+  spacing: any,
+  radius: any,
+  typography: any
+) =>
   StyleSheet.create({
     container: {
       flex: 1,
@@ -233,6 +362,7 @@ const createStyles = (colors: any, isDark: boolean) =>
       shadowRadius: 8,
       elevation: 3,
     },
+    // Main Revenue Card
     mainCard: {
       backgroundColor: colors.card,
       borderRadius: radius.xl,
@@ -271,10 +401,11 @@ const createStyles = (colors: any, isDark: boolean) =>
       ...typography.footnote,
       color: colors.textTertiary,
     },
+    // Stats Row
     statsRow: {
       flexDirection: "row",
       gap: spacing.md,
-      marginBottom: spacing.xl,
+      marginBottom: spacing.lg,
     },
     statCard: {
       flex: 1,
@@ -290,6 +421,10 @@ const createStyles = (colors: any, isDark: boolean) =>
     statCardPending: {
       borderLeftWidth: 3,
       borderLeftColor: colors.alert,
+    },
+    statCardOverdue: {
+      borderLeftWidth: 3,
+      borderLeftColor: colors.statusOverdue,
     },
     statIconContainer: {
       marginBottom: spacing.sm,
@@ -308,6 +443,38 @@ const createStyles = (colors: any, isDark: boolean) =>
       color: colors.textTertiary,
       marginTop: spacing.xs,
     },
+    // Quick Stats
+    quickStats: {
+      flexDirection: "row",
+      backgroundColor: colors.card,
+      borderRadius: radius.lg,
+      padding: spacing.md,
+      marginBottom: spacing.xl,
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: isDark ? 0.3 : 0.06,
+      shadowRadius: 8,
+      elevation: 3,
+    },
+    quickStatItem: {
+      flex: 1,
+      alignItems: "center",
+    },
+    quickStatDivider: {
+      width: 1,
+      alignSelf: "stretch",
+      marginVertical: 4,
+    },
+    quickStatValue: {
+      ...typography.title2,
+      color: colors.text,
+      marginBottom: 2,
+    },
+    quickStatLabel: {
+      ...typography.caption2,
+      color: colors.textTertiary,
+    },
+    // Voice Section
     voiceSection: {
       alignItems: "center",
       marginTop: spacing.xl,
