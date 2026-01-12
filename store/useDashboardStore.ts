@@ -10,7 +10,7 @@ interface DashboardState {
   isLoading: boolean;
 
   // Actions
-  fetchStats: () => Promise<void>;
+  fetchDashboardStats: () => Promise<void>;
 
   // Reset
   reset: () => void;
@@ -28,7 +28,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   stats: defaultStats,
   isLoading: false,
 
-  fetchStats: async () => {
+  fetchDashboardStats: async () => {
     set({ isLoading: true });
     try {
       const stats = await db.getDashboardStats();
