@@ -1,17 +1,19 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
-  ScrollView,
   Alert,
   Pressable,
   StyleSheet,
   ActivityIndicator,
   ActionSheetIOS,
   Platform,
+  Animated,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { useRouter, useLocalSearchParams, useNavigation } from "expo-router";
 import {
   ArrowLeft,
   Share2,
@@ -37,19 +39,23 @@ import { getPaymentLink } from "@/services/stripe";
 import * as db from "@/services/database";
 
 /**
- * Invoice Detail Screen
- * Per design-system.md and product-strategy.md
+ * Invoice Detail Screen - Elastic Parallax
  *
  * Features:
- * - Full invoice view with status
- * - Send invoice flow (PDF + payment link + share)
- * - Multiple share options (SMS, WhatsApp, Email)
- * - Mark as paid
- * - View payment link
+ * - Elastic pull-down with scaling avatar/badge
+ * - Collapsing header with sticky nav title
+ * - Haptic snaps on pull threshold
+ * - Physical rubber sheet feel
  */
+
+// Scroll thresholds
+const PULL_THRESHOLD = -60; // Pull-down distance for haptic snap
+const TITLE_FADE_START = 20;
+const TITLE_FADE_END = 80;
 
 export default function InvoiceDetail() {
   const router = useRouter();
+  const navigation = useNavigation();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors, typography, spacing, radius, shadows, isDark } = useTheme();
   const { invoices, fetchInvoice, updateInvoice } = useInvoiceStore();
@@ -60,6 +66,63 @@ export default function InvoiceDetail() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+
+  // Scroll animation
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const hasTriggeredHaptic = useRef(false);
+
+  // Update navigation title based on scroll
+  useEffect(() => {
+    if (invoice) {
+      const listenerId = scrollY.addListener(({ value }) => {
+        // Show/hide navigation title based on scroll
+        if (value > TITLE_FADE_END) {
+          navigation.setOptions({
+            headerShown: true,
+            headerTransparent: true,
+            headerTitle: invoice.client_name,
+            headerTitleStyle: {
+              ...typography.headline,
+              color: colors.text,
+            },
+            headerBackground: () => (
+              <Animated.View
+                style={{
+                  flex: 1,
+                  backgroundColor: colors.background,
+                  opacity: 0.95,
+                }}
+              />
+            ),
+          });
+        } else {
+          navigation.setOptions({
+            headerShown: false,
+          });
+        }
+      });
+
+      return () => {
+        scrollY.removeListener(listenerId);
+      };
+    }
+  }, [invoice, colors, typography]);
+
+  // Handle scroll for haptic snap
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const y = event.nativeEvent.contentOffset.y;
+
+      // Haptic snap when pulling down past threshold
+      if (y < PULL_THRESHOLD && !hasTriggeredHaptic.current) {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        hasTriggeredHaptic.current = true;
+      } else if (y > PULL_THRESHOLD) {
+        hasTriggeredHaptic.current = false;
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     loadInvoice();
@@ -113,6 +176,27 @@ export default function InvoiceDetail() {
   }
 
   const statusColors = getStatusColor(invoice.status, colors);
+
+  // Elastic scaling for pull-down (y < 0)
+  const elasticScale = scrollY.interpolate({
+    inputRange: [-200, 0],
+    outputRange: [1.4, 1],
+    extrapolate: "clamp",
+  });
+
+  // Large title fade out on scroll-up
+  const largeTitleOpacity = scrollY.interpolate({
+    inputRange: [TITLE_FADE_START, TITLE_FADE_END],
+    outputRange: [1, 0],
+    extrapolate: "clamp",
+  });
+
+  // Header translation for parallax effect
+  const headerTranslateY = scrollY.interpolate({
+    inputRange: [-100, 0, 100],
+    outputRange: [50, 0, -30],
+    extrapolate: "clamp",
+  });
 
   const handleSendInvoice = () => {
     if (Platform.OS === "ios") {
@@ -299,27 +383,62 @@ export default function InvoiceDetail() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
+      {/* Fixed Header Bar */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <Pressable onPress={() => router.back()} style={styles.headerButton}>
           <ArrowLeft size={24} color={colors.text} />
         </Pressable>
-        <Text style={[typography.headline, { color: colors.text }]}>
+        <Animated.Text
+          style={[
+            typography.headline,
+            {
+              color: colors.text,
+              opacity: scrollY.interpolate({
+                inputRange: [TITLE_FADE_START, TITLE_FADE_END + 20],
+                outputRange: [0, 1],
+                extrapolate: "clamp",
+              }),
+            },
+          ]}
+        >
           {invoice.invoice_number}
-        </Text>
+        </Animated.Text>
         <Pressable onPress={handleMoreOptions} style={styles.headerButton}>
           <MoreHorizontal size={24} color={colors.text} />
         </Pressable>
       </View>
 
-      <ScrollView
+      <Animated.ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          {
+            useNativeDriver: false,
+            listener: handleScroll,
+          }
+        )}
+        bounces={true}
+        alwaysBounceVertical={true}
       >
-        {/* Client Info & Status */}
-        <View style={styles.clientSection}>
-          <View
+        {/* ═══════════════════════════════════════════════════════════
+            ELASTIC HEADER - Scales on pull-down
+        ═══════════════════════════════════════════════════════════ */}
+        <Animated.View
+          style={[
+            styles.elasticHeader,
+            {
+              transform: [
+                { scale: elasticScale },
+                { translateY: headerTranslateY },
+              ],
+            },
+          ]}
+        >
+          {/* Client Avatar */}
+          <Animated.View
             style={[
               styles.avatar,
               { backgroundColor: colors.primary + "20" },
@@ -328,14 +447,30 @@ export default function InvoiceDetail() {
             <Text style={[typography.title2, { color: colors.primary }]}>
               {invoice.client_name?.charAt(0).toUpperCase() || "?"}
             </Text>
-          </View>
-          <Text style={[typography.title1, { color: colors.text, marginTop: spacing.md }]}>
+          </Animated.View>
+
+          {/* Client Name - Fades on scroll */}
+          <Animated.Text
+            style={[
+              typography.title1,
+              {
+                color: colors.text,
+                marginTop: spacing.md,
+                opacity: largeTitleOpacity,
+              },
+            ]}
+          >
             {invoice.client_name}
-          </Text>
-          <View
+          </Animated.Text>
+
+          {/* Status Badge */}
+          <Animated.View
             style={[
               styles.statusBadge,
-              { backgroundColor: statusColors.background, marginTop: spacing.sm },
+              {
+                backgroundColor: statusColors.background,
+                marginTop: spacing.sm,
+              },
             ]}
           >
             {getStatusIcon()}
@@ -347,8 +482,23 @@ export default function InvoiceDetail() {
             >
               {invoice.status.toUpperCase()}
             </Text>
-          </View>
-        </View>
+          </Animated.View>
+        </Animated.View>
+
+        {/* Invoice Number (visible when large title fades) */}
+        <Animated.Text
+          style={[
+            typography.caption1,
+            {
+              color: colors.textTertiary,
+              textAlign: "center",
+              marginTop: spacing.sm,
+              opacity: largeTitleOpacity,
+            },
+          ]}
+        >
+          {invoice.invoice_number}
+        </Animated.Text>
 
         {/* Dates */}
         <View style={styles.datesRow}>
@@ -477,7 +627,7 @@ export default function InvoiceDetail() {
             </Text>
           </View>
         )}
-      </ScrollView>
+      </Animated.ScrollView>
 
       {/* Bottom Actions */}
       <View style={[styles.bottomActions, { borderTopColor: colors.border }]}>
@@ -565,7 +715,8 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: 1,
+    borderBottomWidth: 0,
+    zIndex: 10,
   },
   headerButton: {
     padding: 8,
@@ -576,11 +727,12 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 24,
+    paddingTop: 8,
     paddingBottom: 40,
   },
-  clientSection: {
+  elasticHeader: {
     alignItems: "center",
-    marginBottom: 24,
+    marginBottom: 16,
   },
   avatar: {
     width: 72,
@@ -599,6 +751,7 @@ const styles = StyleSheet.create({
   datesRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    marginTop: 24,
     marginBottom: 24,
   },
   dateItem: {},

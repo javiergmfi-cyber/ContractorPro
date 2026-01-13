@@ -127,12 +127,14 @@ const fontFamily = Platform.select({
 
 export const typography = {
   // Display - Heavy weight for impact
+  // All styles include tabular-nums for consistent number widths (Financial Typography)
   largeTitle: {
     fontSize: 34,
     fontWeight: "900" as const, // Heavy
     fontFamily,
     letterSpacing: 0.37,
     lineHeight: 41,
+    fontVariant: ["tabular-nums"] as const,
   },
   title1: {
     fontSize: 28,
@@ -140,6 +142,7 @@ export const typography = {
     fontFamily,
     letterSpacing: 0.36,
     lineHeight: 34,
+    fontVariant: ["tabular-nums"] as const,
   },
   title2: {
     fontSize: 22,
@@ -147,6 +150,7 @@ export const typography = {
     fontFamily,
     letterSpacing: 0.35,
     lineHeight: 28,
+    fontVariant: ["tabular-nums"] as const,
   },
   title3: {
     fontSize: 20,
@@ -154,6 +158,7 @@ export const typography = {
     fontFamily,
     letterSpacing: 0.38,
     lineHeight: 25,
+    fontVariant: ["tabular-nums"] as const,
   },
   // Headlines - Semibold
   headline: {
@@ -162,6 +167,7 @@ export const typography = {
     fontFamily,
     letterSpacing: -0.41,
     lineHeight: 22,
+    fontVariant: ["tabular-nums"] as const,
   },
   // Body - Medium
   body: {
@@ -170,6 +176,7 @@ export const typography = {
     fontFamily,
     letterSpacing: -0.41,
     lineHeight: 22,
+    fontVariant: ["tabular-nums"] as const,
   },
   callout: {
     fontSize: 16,
@@ -177,6 +184,7 @@ export const typography = {
     fontFamily,
     letterSpacing: -0.32,
     lineHeight: 21,
+    fontVariant: ["tabular-nums"] as const,
   },
   subhead: {
     fontSize: 15,
@@ -184,6 +192,7 @@ export const typography = {
     fontFamily,
     letterSpacing: -0.24,
     lineHeight: 20,
+    fontVariant: ["tabular-nums"] as const,
   },
   footnote: {
     fontSize: 13,
@@ -191,6 +200,7 @@ export const typography = {
     fontFamily,
     letterSpacing: -0.08,
     lineHeight: 18,
+    fontVariant: ["tabular-nums"] as const,
   },
   caption1: {
     fontSize: 12,
@@ -198,6 +208,7 @@ export const typography = {
     fontFamily,
     letterSpacing: 0,
     lineHeight: 16,
+    fontVariant: ["tabular-nums"] as const,
   },
   caption2: {
     fontSize: 11,
@@ -205,6 +216,7 @@ export const typography = {
     fontFamily,
     letterSpacing: 0.07,
     lineHeight: 13,
+    fontVariant: ["tabular-nums"] as const,
   },
   // Numbers - Heavy with tabular figures
   invoiceAmount: {

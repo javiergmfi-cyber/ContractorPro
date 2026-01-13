@@ -16,6 +16,7 @@ export interface ParsedInvoice {
   detectedLanguage: string;
   confidence?: number;
   notes?: string;
+  dueDate?: string; // ISO date string
 }
 
 interface InvoiceState {

@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   TextInput,
+  ScrollView,
   Pressable,
   KeyboardAvoidingView,
   Platform,
@@ -11,6 +12,7 @@ import {
   UIManager,
   Animated,
   Keyboard,
+  TouchableWithoutFeedback,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -18,13 +20,13 @@ import {
   X,
   UserPlus,
   ArrowRight,
-  Check,
 } from "lucide-react-native";
 import * as Contacts from "expo-contacts";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/lib/theme";
 import { MonogramAvatar } from "@/components/MonogramAvatar";
 import { useInvoiceStore } from "@/store/useInvoiceStore";
+import { AutoResizingInput } from "@/components/ui/AutoResizingInput";
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -42,6 +44,23 @@ interface SelectedContact {
   email?: string;
 }
 
+// Quick-Term Due Date Options
+type DueTerm = "immediate" | "net7" | "net15" | "net30";
+
+const DUE_TERM_OPTIONS: { key: DueTerm; label: string; days: number }[] = [
+  { key: "immediate", label: "Immediate", days: 0 },
+  { key: "net7", label: "Net 7", days: 7 },
+  { key: "net15", label: "Net 15", days: 15 },
+  { key: "net30", label: "Net 30", days: 30 },
+];
+
+const getDueDateFromTerm = (term: DueTerm): Date => {
+  const option = DUE_TERM_OPTIONS.find((o) => o.key === term);
+  const date = new Date();
+  date.setDate(date.getDate() + (option?.days ?? 0));
+  return date;
+};
+
 export default function CreateInvoiceScreen() {
   const router = useRouter();
   const { colors, glass, typography, spacing, radius } = useTheme();
@@ -51,6 +70,7 @@ export default function CreateInvoiceScreen() {
   const [selectedContact, setSelectedContact] = useState<SelectedContact | null>(null);
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
+  const [dueTerm, setDueTerm] = useState<DueTerm>("immediate");
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
 
   // Refs
@@ -163,6 +183,8 @@ export default function CreateInvoiceScreen() {
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
+    const dueDate = getDueDateFromTerm(dueTerm);
+
     setPendingInvoice({
       clientName: selectedContact.name,
       clientPhone: selectedContact.phone,
@@ -178,6 +200,7 @@ export default function CreateInvoiceScreen() {
       detectedLanguage: "en",
       confidence: 1.0,
       notes: "Quick Invoice",
+      dueDate: dueDate.toISOString(),
     });
 
     router.push("/invoice/preview");
@@ -189,17 +212,23 @@ export default function CreateInvoiceScreen() {
     router.back();
   };
 
+  // Dismiss keyboard when tapping outside inputs
+  const dismissKeyboard = () => {
+    Keyboard.dismiss();
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top", "bottom"]}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.keyboardView}
-        keyboardVerticalOffset={0}
-      >
-        {/* ═══════════════════════════════════════════════════════════
-            HEADER
-        ═══════════════════════════════════════════════════════════ */}
-        <View style={styles.header}>
+      <TouchableWithoutFeedback onPress={dismissKeyboard} accessible={false}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.keyboardView}
+          keyboardVerticalOffset={0}
+        >
+          {/* ═══════════════════════════════════════════════════════════
+              HEADER
+          ═══════════════════════════════════════════════════════════ */}
+          <View style={styles.header}>
           <Pressable onPress={handleClose} style={styles.closeButton} hitSlop={12}>
             <X size={24} color={colors.text} strokeWidth={2} />
           </Pressable>
@@ -244,25 +273,21 @@ export default function CreateInvoiceScreen() {
         </View>
 
         {/* ═══════════════════════════════════════════════════════════
-            THE "HOW MUCH" - Amount Input
+            THE "HOW MUCH" - Premium Calculator Amount Input
         ═══════════════════════════════════════════════════════════ */}
         <View style={styles.amountSection}>
-          <View style={styles.amountInputContainer}>
-            <Text style={[styles.currencySymbol, { color: colors.text }]}>$</Text>
-            <TextInput
-              ref={amountInputRef}
-              style={[styles.amountInput, { color: colors.text }]}
-              value={amount}
-              onChangeText={handleAmountChange}
-              placeholder="0"
-              placeholderTextColor={colors.textTertiary}
-              keyboardType="decimal-pad"
-              returnKeyType="next"
-              onSubmitEditing={() => descriptionInputRef.current?.focus()}
-              maxLength={10}
-              selectionColor={colors.primary}
-            />
-          </View>
+          <AutoResizingInput
+            ref={amountInputRef}
+            value={amount}
+            onChangeText={handleAmountChange}
+            currencySymbol="$"
+            placeholder="0"
+            placeholderTextColor={colors.textTertiary}
+            keyboardType="decimal-pad"
+            returnKeyType="next"
+            onSubmitEditing={() => descriptionInputRef.current?.focus()}
+            maxLength={10}
+          />
 
           {/* Subtle underline */}
           <View style={[styles.amountUnderline, { backgroundColor: colors.border }]} />
@@ -289,6 +314,53 @@ export default function CreateInvoiceScreen() {
           />
         </View>
 
+        {/* ═══════════════════════════════════════════════════════════
+            THE "WHEN" - Quick-Term Due Date Selector
+        ═══════════════════════════════════════════════════════════ */}
+        <View style={styles.dueDateSection}>
+          <Text style={[styles.dueDateLabel, { color: colors.textTertiary }]}>
+            Due Date
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.dueTermScrollContent}
+          >
+            {DUE_TERM_OPTIONS.map((option) => {
+              const isActive = dueTerm === option.key;
+              return (
+                <Pressable
+                  key={option.key}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    setDueTerm(option.key);
+                  }}
+                  style={[
+                    styles.dueTermChip,
+                    isActive
+                      ? [
+                          styles.dueTermChipActive,
+                          { backgroundColor: colors.primary },
+                        ]
+                      : { backgroundColor: colors.backgroundSecondary },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.dueTermText,
+                      isActive
+                        ? styles.dueTermTextActive
+                        : { color: colors.textSecondary },
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+
         {/* Spacer */}
         <View style={styles.spacer} />
 
@@ -313,7 +385,8 @@ export default function CreateInvoiceScreen() {
             ))}
           </View>
         )}
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </TouchableWithoutFeedback>
 
       {/* ═══════════════════════════════════════════════════════════
           THE "SEND" FAB - Slides up when valid
@@ -433,25 +506,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
     paddingVertical: 24,
   },
-  amountInputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  currencySymbol: {
-    fontSize: 48,
-    fontWeight: "400",
-    marginRight: 4,
-    opacity: 0.5,
-  },
-  amountInput: {
-    fontSize: 64,
-    fontWeight: "900",
-    letterSpacing: -2,
-    minWidth: 80,
-    textAlign: "center",
-    fontVariant: ["tabular-nums"],
-  },
   amountUnderline: {
     width: 120,
     height: 2,
@@ -471,6 +525,43 @@ const styles = StyleSheet.create({
     textAlign: "center",
     letterSpacing: -0.4,
     paddingVertical: 12,
+  },
+
+  // Due Date Section - Quick-Term Selector
+  dueDateSection: {
+    paddingTop: 8,
+    paddingBottom: 16,
+  },
+  dueDateLabel: {
+    fontSize: 13,
+    fontWeight: "500",
+    textAlign: "center",
+    marginBottom: 12,
+    letterSpacing: -0.08,
+  },
+  dueTermScrollContent: {
+    paddingHorizontal: 20,
+    gap: 10,
+  },
+  dueTermChip: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 100,
+  },
+  dueTermChipActive: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  dueTermText: {
+    fontSize: 15,
+    fontWeight: "600",
+    letterSpacing: -0.24,
+  },
+  dueTermTextActive: {
+    color: "#FFFFFF",
   },
 
   // Spacer

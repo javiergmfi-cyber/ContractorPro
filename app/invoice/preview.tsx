@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Switch,
+  Keyboard,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -26,6 +27,7 @@ import {
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/Button";
+import { SuccessOverlay } from "@/components/SuccessOverlay";
 import { useInvoiceStore } from "@/store/useInvoiceStore";
 import { useProfileStore } from "@/store/useProfileStore";
 import { formatCurrency, toDollars } from "@/types";
@@ -51,6 +53,7 @@ export default function InvoicePreview() {
   const [isEditing, setIsEditing] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
 
   // Editable fields
   const [clientName, setClientName] = useState(pendingInvoice?.clientName || "");
@@ -88,7 +91,6 @@ export default function InvoicePreview() {
 
   const handleConfirm = async () => {
     setIsSaving(true);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     try {
       // Create invoice in database
@@ -118,19 +120,21 @@ export default function InvoicePreview() {
         }
 
         clearPendingInvoice();
+        setIsSaving(false);
 
-        Alert.alert(
-          "Invoice Created",
-          `Invoice ${newInvoice.invoice_number} has been created.`,
-          [{ text: "OK", onPress: () => router.replace("/(tabs)/invoices") }]
-        );
+        // Show cinematic success overlay
+        setShowSuccess(true);
       }
     } catch (error) {
       console.error("Error creating invoice:", error);
-      Alert.alert("Error", "Failed to create invoice. Please try again.");
-    } finally {
       setIsSaving(false);
+      Alert.alert("Error", "Failed to create invoice. Please try again.");
     }
+  };
+
+  const handleSuccessDismiss = () => {
+    setShowSuccess(false);
+    router.replace("/(tabs)/invoices");
   };
 
   const handleCancel = () => {
@@ -169,11 +173,17 @@ export default function InvoicePreview() {
     return colors.statusOverdue;
   };
 
+  // Dismiss keyboard when tapping outside inputs
+  const dismissKeyboard = () => {
+    Keyboard.dismiss();
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
       >
         {/* Header */}
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
@@ -195,6 +205,8 @@ export default function InvoicePreview() {
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          onScrollBeginDrag={dismissKeyboard}
         >
           {/* AI Confidence Banner */}
           <View
@@ -579,6 +591,13 @@ export default function InvoicePreview() {
           />
         </View>
       </KeyboardAvoidingView>
+
+      {/* Success Overlay */}
+      <SuccessOverlay
+        type="sent"
+        visible={showSuccess}
+        onDismiss={handleSuccessDismiss}
+      />
     </SafeAreaView>
   );
 }
