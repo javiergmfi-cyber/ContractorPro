@@ -67,6 +67,13 @@ function RootLayoutContent() {
               animation: "slide_from_bottom",
             }}
           />
+          <Stack.Screen
+            name="paywall"
+            options={{
+              presentation: "fullScreenModal",
+              animation: "slide_from_bottom",
+            }}
+          />
         </Stack>
       </AuthGuard>
     </>

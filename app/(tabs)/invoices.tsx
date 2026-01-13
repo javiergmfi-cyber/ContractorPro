@@ -12,13 +12,16 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Plus, FileText } from "lucide-react-native";
+import { Plus, FileText, Mic } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useInvoiceStore } from "@/store/useInvoiceStore";
 import { useTheme } from "@/lib/theme";
 import { Invoice } from "@/types";
 import { InvoiceCard } from "@/components/InvoiceCard";
+import { RecordingOverlay } from "@/components/RecordingOverlay";
+import { startRecording, stopRecording } from "@/services/audio";
+import { processVoiceToInvoice } from "@/services/ai";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const HEADER_MAX_HEIGHT = 120;
@@ -38,10 +41,12 @@ type FilterType = "all" | "unpaid" | "paid";
 export default function InvoicesScreen() {
   const router = useRouter();
   const { colors, isDark, typography, radius } = useTheme();
-  const { invoices, isLoading, fetchInvoices, updateInvoice } = useInvoiceStore();
+  const { invoices, isLoading, fetchInvoices, updateInvoice, setPendingInvoice } = useInvoiceStore();
 
   const [activeFilter, setActiveFilter] = useState<FilterType>("all");
   const [refreshing, setRefreshing] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
 
   // Scroll animation for collapsing header
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -49,6 +54,42 @@ export default function InvoicesScreen() {
   useEffect(() => {
     fetchInvoices();
   }, []);
+
+  // Recording timer
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    if (isRecording) {
+      interval = setInterval(() => {
+        setRecordingDuration((prev) => prev + 1);
+      }, 1000);
+    } else {
+      setRecordingDuration(0);
+    }
+    return () => clearInterval(interval);
+  }, [isRecording]);
+
+  // Voice recording handlers
+  const handleStartVoiceRecording = async () => {
+    setIsRecording(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    await startRecording();
+  };
+
+  const handleStopVoiceRecording = async () => {
+    setIsRecording(false);
+    const audioUri = await stopRecording();
+
+    if (audioUri) {
+      try {
+        const result = await processVoiceToInvoice(audioUri);
+        setPendingInvoice(result.parsedInvoice);
+        router.push("/invoice/preview");
+      } catch (error) {
+        console.error("Error processing voice:", error);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+    }
+  };
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -206,6 +247,39 @@ export default function InvoicesScreen() {
         <Plus size={20} color="#FFFFFF" strokeWidth={2.5} />
         <Text style={styles.emptyButtonText}>Create Invoice</Text>
       </Pressable>
+
+      {/* Divider */}
+      <View style={styles.emptyDividerContainer}>
+        <View style={[styles.emptyDividerLine, { backgroundColor: colors.border }]} />
+        <Text style={[styles.emptyDividerText, { color: colors.textTertiary }]}>or</Text>
+        <View style={[styles.emptyDividerLine, { backgroundColor: colors.border }]} />
+      </View>
+
+      {/* Speak to Create Button */}
+      <Pressable
+        onPressIn={handleStartVoiceRecording}
+        onPressOut={handleStopVoiceRecording}
+        style={({ pressed }) => [
+          styles.speakButton,
+          {
+            backgroundColor: colors.backgroundSecondary,
+            borderColor: colors.border,
+          },
+          pressed && { backgroundColor: colors.backgroundTertiary },
+        ]}
+      >
+        <View style={[styles.speakButtonIcon, { backgroundColor: colors.primary + "15" }]}>
+          <Mic size={20} color={colors.primary} strokeWidth={2} />
+        </View>
+        <View style={styles.speakButtonTextContainer}>
+          <Text style={[styles.speakButtonTitle, { color: colors.text }]}>
+            Speak to Create
+          </Text>
+          <Text style={[styles.speakButtonSubtitle, { color: colors.textTertiary }]}>
+            Hold and describe your work
+          </Text>
+        </View>
+      </Pressable>
     </View>
   );
 
@@ -315,6 +389,9 @@ export default function InvoicesScreen() {
         >
           <Plus size={28} color="#FFFFFF" strokeWidth={2.5} />
         </Pressable>
+
+        {/* Recording Overlay */}
+        <RecordingOverlay visible={isRecording} duration={recordingDuration} />
       </SafeAreaView>
     </GestureHandlerRootView>
   );
@@ -420,6 +497,55 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 17,
     fontWeight: "600",
+  },
+  emptyDividerContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 24,
+    marginBottom: 20,
+    width: "100%",
+    paddingHorizontal: 20,
+  },
+  emptyDividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  emptyDividerText: {
+    paddingHorizontal: 16,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  speakButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    width: "100%",
+    maxWidth: 280,
+  },
+  speakButtonIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14,
+  },
+  speakButtonTextContainer: {
+    flex: 1,
+  },
+  speakButtonTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    letterSpacing: -0.3,
+    marginBottom: 2,
+  },
+  speakButtonSubtitle: {
+    fontSize: 13,
+    fontWeight: "400",
+    letterSpacing: -0.1,
   },
 
   // FAB

@@ -12,6 +12,8 @@ export type Json =
   | Json[];
 
 export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'void' | 'overdue';
+export type SubscriptionStatus = 'free' | 'active' | 'canceled' | 'past_due' | 'trialing';
+export type SubscriptionTier = 'free' | 'pro';
 
 export interface Database {
   public: {
@@ -31,6 +33,10 @@ export interface Database {
           default_currency: string;
           default_language: string;
           tax_rate: number;
+          subscription_status: SubscriptionStatus;
+          subscription_tier: SubscriptionTier;
+          stripe_customer_id: string | null;
+          current_period_end: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -48,6 +54,10 @@ export interface Database {
           default_currency?: string;
           default_language?: string;
           tax_rate?: number;
+          subscription_status?: SubscriptionStatus;
+          subscription_tier?: SubscriptionTier;
+          stripe_customer_id?: string | null;
+          current_period_end?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -65,6 +75,10 @@ export interface Database {
           default_currency?: string;
           default_language?: string;
           tax_rate?: number;
+          subscription_status?: SubscriptionStatus;
+          subscription_tier?: SubscriptionTier;
+          stripe_customer_id?: string | null;
+          current_period_end?: string | null;
           updated_at?: string;
         };
       };
