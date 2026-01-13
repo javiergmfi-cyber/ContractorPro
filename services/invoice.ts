@@ -101,31 +101,16 @@ export async function sendInvoice(
 
 /**
  * Construct the invoice message for sharing
- * Per product-strategy.md "Hybrid Messaging"
+ * Highlights ease of payment for professional appearance
  */
 function constructInvoiceMessage(invoice: Invoice, paymentUrl?: string): string {
   const amount = formatCurrency(invoice.total, invoice.currency);
-  const dueDate = invoice.due_date
-    ? new Date(invoice.due_date).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })
-    : null;
 
   let message = `Hi ${invoice.client_name.split(" ")[0]},\n\n`;
-  message += `Here's your invoice for ${amount}.\n`;
-  message += `Invoice #: ${invoice.invoice_number}\n`;
-
-  if (dueDate) {
-    message += `Due: ${dueDate}\n`;
-  }
-
-  if (paymentUrl) {
-    message += `\nPay securely here:\n${paymentUrl}\n`;
-  }
-
-  message += `\nThank you for your business!`;
+  message += `Here is your invoice for ${amount}.\n\n`;
+  message += `You can pay securely via Apple Pay, Google Pay, or Card here:\n`;
+  message += `${paymentUrl}\n\n`;
+  message += `Thank you for your business!`;
 
   return message;
 }

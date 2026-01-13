@@ -1,20 +1,20 @@
 import React, { useRef } from "react";
 import { View, Text, StyleSheet, Animated, Pressable } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
-import { Check, Bell, MoreHorizontal, Trash2 } from "lucide-react-native";
+import { Check, Bell, Trash2 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
-import { useTheme, getStatusColor } from "@/lib/theme";
-import { Invoice, InvoiceStatus, formatCurrency, formatRelativeDate, toDollars } from "@/types";
+import { useTheme } from "@/lib/theme";
+import { Invoice, InvoiceStatus, formatCurrency, formatRelativeDate } from "@/types";
 
 /**
- * InvoiceCard Component
- * Per design-system.md "Wallet Pass" paradigm
+ * InvoiceCard Component - Apple Wallet Aesthetic
+ * Visual Metaphor: Physical Ticket / Pass
  *
  * Layout:
- * - Top-left: Client Name (Secondary Field)
- * - Top-right: Status Badge (Capsule)
- * - Bottom-left: Invoice ID + Relative Date (Auxiliary)
- * - Bottom-right: Amount (Primary Field)
+ * - Top Left: Client Name (17pt, semibold)
+ * - Top Right: Status Dot (8px, glowing)
+ * - Bottom Left: Relative Date (gray)
+ * - Bottom Right: Amount (20pt, bold, tabular-nums)
  */
 
 interface InvoiceCardProps {
@@ -22,7 +22,6 @@ interface InvoiceCardProps {
   onPress: () => void;
   onMarkPaid?: () => void;
   onRemind?: () => void;
-  onMore?: () => void;
   onVoid?: () => void;
 }
 
@@ -31,20 +30,56 @@ export function InvoiceCard({
   onPress,
   onMarkPaid,
   onRemind,
-  onMore,
   onVoid,
 }: InvoiceCardProps) {
-  const { colors, typography, spacing, radius, shadows } = useTheme();
+  const { colors, isDark } = useTheme();
   const swipeableRef = useRef<Swipeable>(null);
+  const scaleAnim = useRef(new Animated.Value(1)).current;
 
-  const statusColors = getStatusColor(invoice.status, colors);
+  // Status dot colors with glow
+  const getStatusDotColor = (status: InvoiceStatus): string => {
+    switch (status) {
+      case "paid":
+        return colors.statusPaid;
+      case "sent":
+        return colors.statusSent;
+      case "overdue":
+        return colors.statusOverdue;
+      case "draft":
+        return colors.statusDraft;
+      case "void":
+        return colors.textTertiary;
+      default:
+        return colors.textTertiary;
+    }
+  };
+
+  const statusDotColor = getStatusDotColor(invoice.status);
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.98,
+      damping: 15,
+      stiffness: 300,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      damping: 15,
+      stiffness: 300,
+      useNativeDriver: true,
+    }).start();
+  };
 
   const handlePress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Haptics.selectionAsync();
     onPress();
   };
 
-  // Right swipe action - Mark as Paid (per design-system.md Section 1.4)
+  // Right swipe action - Mark as Paid
   const renderRightAction = (
     progress: Animated.AnimatedInterpolation<number>,
     dragX: Animated.AnimatedInterpolation<number>
@@ -52,8 +87,8 @@ export function InvoiceCard({
     if (invoice.status === "paid" || !onMarkPaid) return null;
 
     const scale = dragX.interpolate({
-      inputRange: [-100, 0],
-      outputRange: [1, 0],
+      inputRange: [-80, 0],
+      outputRange: [1, 0.5],
       extrapolate: "clamp",
     });
 
@@ -64,48 +99,28 @@ export function InvoiceCard({
           swipeableRef.current?.close();
           onMarkPaid();
         }}
-        style={[
-          styles.swipeAction,
-          styles.swipeActionRight,
-          { backgroundColor: colors.statusPaid },
-        ]}
+        style={[styles.swipeAction, { backgroundColor: colors.statusPaid }]}
       >
         <Animated.View style={{ transform: [{ scale }] }}>
-          <Check size={24} color="#FFFFFF" strokeWidth={3} />
+          <Check size={24} color="#FFFFFF" strokeWidth={2.5} />
         </Animated.View>
-        <Text style={styles.swipeActionText}>Paid</Text>
       </Pressable>
     );
   };
 
-  // Left swipe actions - More, Remind, Void (per design-system.md Section 1.4)
+  // Left swipe actions
   const renderLeftActions = (
     progress: Animated.AnimatedInterpolation<number>,
     dragX: Animated.AnimatedInterpolation<number>
   ) => {
     const scale = dragX.interpolate({
-      inputRange: [0, 100],
-      outputRange: [0, 1],
+      inputRange: [0, 80],
+      outputRange: [0.5, 1],
       extrapolate: "clamp",
     });
 
     return (
       <View style={styles.leftActionsContainer}>
-        {onMore && (
-          <Pressable
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              swipeableRef.current?.close();
-              onMore();
-            }}
-            style={[styles.swipeAction, { backgroundColor: colors.textTertiary }]}
-          >
-            <Animated.View style={{ transform: [{ scale }] }}>
-              <MoreHorizontal size={20} color="#FFFFFF" />
-            </Animated.View>
-            <Text style={styles.swipeActionText}>More</Text>
-          </Pressable>
-        )}
         {onRemind && invoice.status !== "paid" && (
           <Pressable
             onPress={() => {
@@ -113,12 +128,11 @@ export function InvoiceCard({
               swipeableRef.current?.close();
               onRemind();
             }}
-            style={[styles.swipeAction, { backgroundColor: colors.statusOverdue }]}
+            style={[styles.swipeAction, { backgroundColor: colors.systemOrange }]}
           >
             <Animated.View style={{ transform: [{ scale }] }}>
-              <Bell size={20} color="#FFFFFF" />
+              <Bell size={22} color="#FFFFFF" strokeWidth={2} />
             </Animated.View>
-            <Text style={styles.swipeActionText}>Remind</Text>
           </Pressable>
         )}
         {onVoid && invoice.status !== "paid" && (
@@ -128,33 +142,24 @@ export function InvoiceCard({
               swipeableRef.current?.close();
               onVoid();
             }}
-            style={[styles.swipeAction, { backgroundColor: colors.error }]}
+            style={[styles.swipeAction, { backgroundColor: colors.systemRed }]}
           >
             <Animated.View style={{ transform: [{ scale }] }}>
-              <Trash2 size={20} color="#FFFFFF" />
+              <Trash2 size={22} color="#FFFFFF" strokeWidth={2} />
             </Animated.View>
-            <Text style={styles.swipeActionText}>Void</Text>
           </Pressable>
         )}
       </View>
     );
   };
 
-  // Format amount for display
+  // Format amount
   const formattedAmount = formatCurrency(invoice.total, invoice.currency);
 
   // Format relative date
-  const relativeDate = invoice.due_date
-    ? formatRelativeDate(invoice.due_date)
-    : formatRelativeDate(invoice.created_at);
-
-  const statusLabels: Record<InvoiceStatus, string> = {
-    draft: "DRAFT",
-    sent: "SENT",
-    paid: "PAID",
-    overdue: "OVERDUE",
-    void: "VOID",
-  };
+  const relativeDate = invoice.created_at
+    ? formatRelativeDate(invoice.created_at)
+    : "Just now";
 
   return (
     <Swipeable
@@ -164,110 +169,134 @@ export function InvoiceCard({
       friction={2}
       overshootRight={false}
       overshootLeft={false}
+      containerStyle={styles.swipeableContainer}
     >
       <Pressable
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
         onPress={handlePress}
-        style={({ pressed }) => [
-          styles.card,
-          {
-            backgroundColor: colors.card,
-            borderRadius: radius.md, // 12pt per design-system.md
-            ...shadows.default,
-            transform: [{ scale: pressed ? 0.98 : 1 }],
-          },
-        ]}
       >
-        {/* Top Row: Client Name + Status Badge */}
-        <View style={styles.topRow}>
-          {/* Secondary Field: Client Name (top-left) */}
-          <Text
-            style={[
-              typography.headline,
-              { color: colors.text, flex: 1 },
-            ]}
-            numberOfLines={1}
-          >
-            {invoice.client_name}
-          </Text>
-
-          {/* Status Badge (top-right, capsule shape) */}
-          <View
-            style={[
-              styles.statusBadge,
-              { backgroundColor: statusColors.background },
-            ]}
-          >
+        <Animated.View
+          style={[
+            styles.card,
+            {
+              backgroundColor: colors.card,
+              transform: [{ scale: scaleAnim }],
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: isDark ? 0.3 : 0.1,
+              shadowRadius: 12,
+            },
+          ]}
+        >
+          {/* Top Row: Client Name + Status Dot */}
+          <View style={styles.topRow}>
+            {/* Client Name (Top Left) */}
             <Text
-              style={[
-                styles.statusText,
-                { color: statusColors.text },
-              ]}
+              style={[styles.clientName, { color: colors.text }]}
+              numberOfLines={1}
             >
-              {statusLabels[invoice.status]}
+              {invoice.client_name}
             </Text>
-          </View>
-        </View>
 
-        {/* Bottom Row: Metadata + Amount */}
-        <View style={styles.bottomRow}>
-          {/* Auxiliary Fields: Invoice ID + Date (bottom-left) */}
-          <View style={styles.metadata}>
-            <Text style={[typography.footnote, { color: colors.textTertiary }]}>
-              {invoice.invoice_number}
-            </Text>
-            <Text style={[typography.footnote, { color: colors.textTertiary }]}>
-              {" "}•{" "}
-            </Text>
-            <Text style={[typography.footnote, { color: colors.textTertiary }]}>
+            {/* Status Dot (Top Right) - Glowing */}
+            <View style={styles.statusDotContainer}>
+              {/* Glow layer */}
+              <View
+                style={[
+                  styles.statusDotGlow,
+                  {
+                    backgroundColor: statusDotColor,
+                    shadowColor: statusDotColor,
+                  },
+                ]}
+              />
+              {/* Main dot */}
+              <View
+                style={[
+                  styles.statusDot,
+                  { backgroundColor: statusDotColor },
+                ]}
+              />
+            </View>
+          </View>
+
+          {/* Bottom Row: Date + Amount */}
+          <View style={styles.bottomRow}>
+            {/* Relative Date (Bottom Left) */}
+            <Text style={[styles.dateText, { color: colors.textTertiary }]}>
               {relativeDate}
             </Text>
-          </View>
 
-          {/* Primary Field: Amount (bottom-right) */}
-          <Text
-            style={[
-              typography.invoiceAmount,
-              { color: colors.text },
-            ]}
-          >
-            {formattedAmount}
-          </Text>
-        </View>
+            {/* Amount (Bottom Right) */}
+            <Text style={[styles.amount, { color: colors.text }]}>
+              {formattedAmount}
+            </Text>
+          </View>
+        </Animated.View>
       </Pressable>
     </Swipeable>
   );
 }
 
 const styles = StyleSheet.create({
+  swipeableContainer: {
+    marginBottom: 12,
+  },
   card: {
-    padding: 16,
-    marginHorizontal: 16,
-    marginVertical: 6,
+    borderRadius: 22,
+    padding: 18,
+    elevation: 6,
   },
   topRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 12,
+    marginBottom: 16,
+  },
+  clientName: {
+    fontSize: 17,
+    fontWeight: "600",
+    letterSpacing: -0.4,
+    flex: 1,
+    marginRight: 12,
+  },
+  statusDotContainer: {
+    width: 12,
+    height: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  statusDotGlow: {
+    position: "absolute",
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    opacity: 0.4,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 4,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   bottomRow: {
     flexDirection: "row",
     alignItems: "flex-end",
     justifyContent: "space-between",
   },
-  metadata: {
-    flexDirection: "row",
-    alignItems: "center",
+  dateText: {
+    fontSize: 13,
+    fontWeight: "500",
+    letterSpacing: -0.1,
   },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12, // Capsule/Lozenge shape
-  },
-  statusText: {
-    fontSize: 11,
+  amount: {
+    fontSize: 20,
     fontWeight: "700",
-    letterSpacing: 0.5,
+    letterSpacing: -0.5,
+    fontVariant: ["tabular-nums"],
   },
   leftActionsContainer: {
     flexDirection: "row",
@@ -276,16 +305,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     width: 72,
-    paddingVertical: 8,
-  },
-  swipeActionRight: {
-    borderTopRightRadius: 12,
-    borderBottomRightRadius: 12,
-  },
-  swipeActionText: {
-    color: "#FFFFFF",
-    fontSize: 11,
-    fontWeight: "600",
-    marginTop: 4,
+    borderRadius: 22,
+    marginRight: 8,
   },
 });

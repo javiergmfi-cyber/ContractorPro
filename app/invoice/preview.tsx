@@ -9,6 +9,7 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -488,6 +489,85 @@ export default function InvoicePreview() {
               Looks wrong? Re-record
             </Text>
           </Pressable>
+
+          {/* Collection Settings - iOS Settings Group Style */}
+          <View style={{ marginTop: 32, marginBottom: 16 }}>
+            {/* Section Header */}
+            <Text style={[typography.caption1, {
+              color: colors.textTertiary,
+              marginBottom: 8,
+              marginLeft: 16,
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+            }]}>
+              Collection Settings
+            </Text>
+
+            {/* Settings Card */}
+            <View style={{
+              backgroundColor: colors.card,
+              borderRadius: radius.lg,
+              overflow: 'hidden',
+            }}>
+              {/* Toggle Row */}
+              <View style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                paddingHorizontal: 16,
+                paddingVertical: 14,
+                borderBottomWidth: StyleSheet.hairlineWidth,
+                borderBottomColor: colors.border,
+              }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={{
+                    backgroundColor: colors.primary,
+                    width: 32,
+                    height: 32,
+                    borderRadius: 8,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                    <Sparkles size={18} color="#FFFFFF" />
+                  </View>
+                  <View>
+                    <Text style={[typography.body, { color: colors.text, fontWeight: '500' }]}>
+                      Auto-Collect
+                    </Text>
+                    <Text style={[typography.caption2, { color: colors.textTertiary }]}>
+                      Bad Cop Mode
+                    </Text>
+                  </View>
+                </View>
+                <Switch
+                  value={true}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+
+              {/* Description Row */}
+              <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
+                <Text style={[typography.footnote, { color: colors.textSecondary, lineHeight: 18 }]}>
+                  We will send polite reminders on{' '}
+                  <Text style={{ fontWeight: '600', color: colors.text }}>Day 3</Text>,{' '}
+                  <Text style={{ fontWeight: '600', color: colors.text }}>Day 7</Text>, and{' '}
+                  <Text style={{ fontWeight: '600', color: colors.text }}>Day 14</Text>{' '}
+                  if unpaid.
+                </Text>
+              </View>
+            </View>
+
+            {/* Footer Note */}
+            <Text style={[typography.caption2, {
+              color: colors.textTertiary,
+              marginTop: 8,
+              marginLeft: 16,
+              lineHeight: 16,
+            }]}>
+              You can disable this anytime from invoice settings.
+            </Text>
+          </View>
         </ScrollView>
 
         {/* Bottom Action */}
