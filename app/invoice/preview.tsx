@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, Fragment } from "react";
 import {
   View,
   Text,
@@ -23,11 +23,14 @@ import {
   ChevronDown,
   ChevronUp,
   Sparkles,
+  Eye,
+  FileText,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/Button";
 import { SuccessOverlay } from "@/components/SuccessOverlay";
+import { BlackCardInvoice } from "@/components/BlackCardInvoice";
 import { useInvoiceStore } from "@/store/useInvoiceStore";
 import { useProfileStore } from "@/store/useProfileStore";
 import { formatCurrency, toDollars } from "@/types";
@@ -54,6 +57,7 @@ export default function InvoicePreview() {
   const [showTranscript, setShowTranscript] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [showCustomerView, setShowCustomerView] = useState(false);
 
   // Editable fields
   const [clientName, setClientName] = useState(pendingInvoice?.clientName || "");
@@ -191,24 +195,129 @@ export default function InvoicePreview() {
             <X size={24} color={colors.text} />
           </Pressable>
           <Text style={[typography.headline, { color: colors.text }]}>
-            Invoice Preview
+            {showCustomerView ? "Customer View" : "Invoice Preview"}
           </Text>
           <Pressable
-            onPress={() => setIsEditing(!isEditing)}
+            onPress={() => {
+              if (showCustomerView) {
+                setShowCustomerView(false);
+              } else {
+                setIsEditing(!isEditing);
+              }
+            }}
             style={styles.headerButton}
           >
-            <Edit3 size={22} color={isEditing ? colors.primary : colors.text} />
+            {showCustomerView ? (
+              <FileText size={22} color={colors.primary} />
+            ) : (
+              <Edit3 size={22} color={isEditing ? colors.primary : colors.text} />
+            )}
+          </Pressable>
+        </View>
+
+        {/* View Toggle - Edit vs Customer Preview */}
+        <View style={[styles.viewToggle, { backgroundColor: colors.backgroundSecondary }]}>
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowCustomerView(false);
+            }}
+            style={[
+              styles.toggleButton,
+              !showCustomerView && { backgroundColor: colors.card },
+              { borderRadius: radius.sm }
+            ]}
+          >
+            <FileText size={16} color={!showCustomerView ? colors.primary : colors.textTertiary} />
+            <Text style={[
+              typography.footnote,
+              {
+                color: !showCustomerView ? colors.text : colors.textTertiary,
+                fontWeight: !showCustomerView ? "600" : "400",
+                marginLeft: 6
+              }
+            ]}>
+              Edit
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowCustomerView(true);
+            }}
+            style={[
+              styles.toggleButton,
+              showCustomerView && { backgroundColor: colors.card },
+              { borderRadius: radius.sm }
+            ]}
+          >
+            <Eye size={16} color={showCustomerView ? colors.primary : colors.textTertiary} />
+            <Text style={[
+              typography.footnote,
+              {
+                color: showCustomerView ? colors.text : colors.textTertiary,
+                fontWeight: showCustomerView ? "600" : "400",
+                marginLeft: 6
+              }
+            ]}>
+              Customer View
+            </Text>
           </Pressable>
         </View>
 
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            showCustomerView && { backgroundColor: '#000000', padding: 16 }
+          ]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           onScrollBeginDrag={dismissKeyboard}
         >
-          {/* AI Confidence Banner */}
+          {/* Customer View - Black Card Invoice */}
+          {showCustomerView ? (
+            <View style={styles.customerViewContainer}>
+              <Text style={[typography.caption1, {
+                color: 'rgba(255,255,255,0.5)',
+                textAlign: 'center',
+                marginBottom: 16,
+                textTransform: 'uppercase',
+                letterSpacing: 1,
+              }]}>
+                This is what your customer will see
+              </Text>
+              <BlackCardInvoice
+                total={total}
+                businessName={profile?.business_name || profile?.full_name || "Your Business"}
+                logoUrl={profile?.logo_url}
+                invoiceNumber={`INV-${Date.now().toString().slice(-6)}`}
+                clientName={clientName}
+                clientEmail={pendingInvoice.clientEmail}
+                items={items.map(item => ({
+                  description: item.description,
+                  quantity: item.quantity || 1,
+                  unitPrice: item.unitPrice || item.price * 100,
+                  total: (item.unitPrice || item.price * 100) * (item.quantity || 1),
+                }))}
+                subtotal={subtotal}
+                taxAmount={taxAmount}
+                taxRate={taxRate}
+                currency={profile?.default_currency || "USD"}
+                createdAt={new Date().toISOString()}
+              />
+              <Text style={[typography.caption2, {
+                color: 'rgba(255,255,255,0.3)',
+                textAlign: 'center',
+                marginTop: 24,
+                lineHeight: 18,
+              }]}>
+                The QR code and Pay button will link to{'\n'}your Stripe payment page
+              </Text>
+            </View>
+          ) : (
+            <Fragment>
+              {/* AI Confidence Banner */}
           <View
             style={[
               styles.confidenceBanner,
@@ -580,6 +689,8 @@ export default function InvoicePreview() {
               You can disable this anytime from invoice settings.
             </Text>
           </View>
+            </Fragment>
+          )}
         </ScrollView>
 
         {/* Bottom Action */}
@@ -713,5 +824,24 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingBottom: 32,
     borderTopWidth: 1,
+  },
+  viewToggle: {
+    flexDirection: "row",
+    padding: 4,
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 10,
+  },
+  toggleButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  customerViewContainer: {
+    paddingTop: 8,
+    paddingBottom: 40,
   },
 });

@@ -16,9 +16,10 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     if (isLoading) return;
 
     const inAuthGroup = segments[0] === "(auth)";
+    const inDemoRoute = segments[0] === "demo";
 
-    if (!session && !inAuthGroup) {
-      // Redirect to login if not authenticated
+    if (!session && !inAuthGroup && !inDemoRoute) {
+      // Redirect to login if not authenticated (except demo route)
       router.replace("/(auth)/login");
     } else if (session && inAuthGroup) {
       // Redirect to home if authenticated and trying to access auth screens
@@ -69,6 +70,13 @@ function RootLayoutContent() {
           />
           <Stack.Screen
             name="paywall"
+            options={{
+              presentation: "fullScreenModal",
+              animation: "slide_from_bottom",
+            }}
+          />
+          <Stack.Screen
+            name="demo"
             options={{
               presentation: "fullScreenModal",
               animation: "slide_from_bottom",
