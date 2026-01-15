@@ -60,6 +60,11 @@ export async function createActivityEvent(
       .single();
 
     if (error) {
+      // Silently handle "table doesn't exist" error
+      if (error.code === "PGRST116" || error.code === "42P01" ||
+          error.message?.includes("does not exist")) {
+        return null;
+      }
       console.error("[Activity] Error creating event:", error);
       return null;
     }
@@ -87,6 +92,12 @@ export async function getRecentActivity(limit: number = 15): Promise<ActivityEve
       .limit(limit);
 
     if (error) {
+      // Silently handle "table doesn't exist" error (PGRST116 or 42P01)
+      // This happens before migrations are run
+      if (error.code === "PGRST116" || error.code === "42P01" ||
+          error.message?.includes("does not exist")) {
+        return [];
+      }
       console.error("[Activity] Error fetching events:", error);
       return [];
     }
