@@ -488,7 +488,7 @@ export default function Profile() {
             <SettingRow
               icon={<Bell size={20} color={isPro ? colors.primary : colors.textTertiary} />}
               title="Enable Auto-Reminders"
-              subtitle={isPro ? "Automatically remind clients about overdue invoices" : "Upgrade to Pro to enable automatic reminders"}
+              subtitle={isPro ? "Automatically remind clients about overdue invoices" : "Get paid 2x faster. We chase payments so you don't have to."}
               rightElement={
                 isPro ? (
                   <Switch
