@@ -473,41 +473,66 @@ export default function Profile() {
             { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
           ]}
         >
-          <View style={styles.sectionTitleRow}>
-            <Text style={styles.sectionTitle}>Payment Collection</Text>
-            {!isPro && (
-              <View style={[styles.proBadge, { backgroundColor: colors.systemOrange + "20" }]}>
-                <Crown size={12} color={colors.systemOrange} />
+          <Text style={[styles.sectionTitle, { marginBottom: spacing.sm }]}>Payment Collection</Text>
+
+          {/* Premium Upsell Card for Non-Pro Users */}
+          {!isPro ? (
+            <Pressable
+              onPress={() => router.push("/paywall?trigger=reminder_fatigue")}
+              style={({ pressed }) => [
+                styles.proUpsellCard,
+                {
+                  backgroundColor: colors.card,
+                  borderRadius: radius.lg,
+                  transform: [{ scale: pressed ? 0.98 : 1 }],
+                },
+              ]}
+            >
+              {/* Pro Badge */}
+              <View style={[styles.proUpsellBadge, { backgroundColor: colors.systemOrange + "15" }]}>
+                <Crown size={14} color={colors.systemOrange} />
                 <Text style={[typography.caption2, { color: colors.systemOrange, fontWeight: "700", marginLeft: 4 }]}>
-                  PRO
+                  PRO FEATURE
                 </Text>
               </View>
-            )}
-          </View>
-          <View style={styles.settingsCard}>
-            <SettingRow
-              icon={<Bell size={20} color={isPro ? colors.primary : colors.textTertiary} />}
-              title="Auto-Chase Unpaid Invoices"
-              subtitle={isPro ? "We text & email clients who haven't paid" : "We text & email your clients until they pay. You do nothing."}
-              rightElement={
-                isPro ? (
+
+              {/* Icon */}
+              <View style={[styles.proUpsellIcon, { backgroundColor: colors.primary + "12" }]}>
+                <Bell size={28} color={colors.primary} strokeWidth={1.5} />
+              </View>
+
+              {/* Title */}
+              <Text style={[styles.proUpsellTitle, { color: colors.text }]}>
+                Auto-Chase Unpaid Invoices
+              </Text>
+
+              {/* Description */}
+              <Text style={[styles.proUpsellDescription, { color: colors.textSecondary }]}>
+                We text & email your clients until they pay.{"\n"}You do nothing.
+              </Text>
+
+              {/* CTA Button */}
+              <View style={[styles.proUpsellButton, { backgroundColor: colors.primary }]}>
+                <Lock size={16} color="#FFFFFF" />
+                <Text style={styles.proUpsellButtonText}>Unlock This Feature</Text>
+              </View>
+            </Pressable>
+          ) : (
+            /* Pro Users - Normal Settings Card */
+            <View style={styles.settingsCard}>
+              <SettingRow
+                icon={<Bell size={20} color={colors.primary} />}
+                title="Auto-Chase Unpaid Invoices"
+                subtitle="We text & email clients who haven't paid"
+                rightElement={
                   <Switch
                     value={reminderSettings?.enabled || false}
                     onValueChange={handleToggleReminders}
                     trackColor={{ false: colors.border, true: colors.primary }}
                     thumbColor="#FFFFFF"
                   />
-                ) : (
-                  <Pressable
-                    onPress={() => router.push("/paywall?trigger=reminder_fatigue")}
-                    style={[styles.unlockButton, { backgroundColor: colors.primary }]}
-                  >
-                    <Lock size={14} color="#FFFFFF" />
-                    <Text style={styles.unlockButtonText}>Unlock</Text>
-                  </Pressable>
-                )
-              }
-            />
+                }
+              />
 
             {reminderSettings?.enabled && (
               <>
@@ -564,7 +589,8 @@ export default function Profile() {
                 />
               </>
             )}
-          </View>
+            </View>
+          )}
         </Animated.View>
 
         {/* Data & Sync Section */}
@@ -1103,5 +1129,60 @@ const createStyles = (colors: any, isDark: boolean, spacing: any, radius: any, t
       alignItems: "center",
       justifyContent: "center",
       marginRight: spacing.sm,
+    },
+    // Pro Upsell Card Styles
+    proUpsellCard: {
+      padding: spacing.lg,
+      alignItems: "center",
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.08,
+      shadowRadius: 12,
+      elevation: 4,
+    },
+    proUpsellBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 20,
+      marginBottom: spacing.md,
+    },
+    proUpsellIcon: {
+      width: 64,
+      height: 64,
+      borderRadius: 20,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: spacing.md,
+    },
+    proUpsellTitle: {
+      fontSize: 20,
+      fontWeight: "700",
+      letterSpacing: -0.4,
+      textAlign: "center",
+      marginBottom: spacing.xs,
+    },
+    proUpsellDescription: {
+      fontSize: 15,
+      fontWeight: "500",
+      textAlign: "center",
+      lineHeight: 22,
+      marginBottom: spacing.lg,
+    },
+    proUpsellButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      paddingVertical: 14,
+      paddingHorizontal: 32,
+      borderRadius: 14,
+      gap: 8,
+      width: "100%",
+    },
+    proUpsellButtonText: {
+      color: "#FFFFFF",
+      fontSize: 17,
+      fontWeight: "600",
     },
   });
