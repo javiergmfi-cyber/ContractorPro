@@ -481,21 +481,21 @@ export default function Profile() {
               onPress={() => !isPro && router.push("/paywall?trigger=reminder_fatigue")}
               style={[styles.settingRow, { paddingVertical: 16 }]}
             >
-              <View style={[styles.settingIcon, { backgroundColor: colors.primary + "15" }]}>
-                <Bell size={20} color={colors.primary} />
+              <View style={styles.iconWithBadge}>
+                {!isPro && (
+                  <View style={[styles.proPillSmall, styles.proPillAbsolute, { backgroundColor: colors.systemOrange + "15" }]}>
+                    <Crown size={10} color={colors.systemOrange} />
+                    <Text style={[styles.proPillText, { color: colors.systemOrange }]}>PRO</Text>
+                  </View>
+                )}
+                <View style={[styles.settingIcon, { backgroundColor: colors.primary + "15" }]}>
+                  <Bell size={20} color={colors.primary} />
+                </View>
               </View>
               <View style={styles.settingContent}>
-                <View style={styles.settingTitleRow}>
-                  <Text style={[typography.body, { color: colors.text, fontWeight: "600" }]}>
-                    Auto-Chase Unpaid Invoices
-                  </Text>
-                  {!isPro && (
-                    <View style={[styles.proPillSmall, { backgroundColor: colors.systemOrange + "15" }]}>
-                      <Crown size={10} color={colors.systemOrange} />
-                      <Text style={[styles.proPillText, { color: colors.systemOrange }]}>PRO</Text>
-                    </View>
-                  )}
-                </View>
+                <Text style={[typography.body, { color: colors.text, fontWeight: "600" }]}>
+                  Auto-Chase Unpaid Invoices
+                </Text>
                 <Text style={[typography.caption1, { color: colors.textTertiary, marginTop: 4, lineHeight: 18 }]}>
                   {isPro
                     ? "We text & email clients who haven't paid"
@@ -1007,9 +1007,22 @@ const createStyles = (colors: any, isDark: boolean, spacing: any, radius: any, t
       borderRadius: 6,
       gap: 3,
     },
+    proPillAbsolute: {
+      position: "absolute",
+      top: -6,
+      left: 0,
+      right: 0,
+      zIndex: 1,
+    },
     proPillText: {
       fontSize: 10,
       fontWeight: "700",
+    },
+    iconWithBadge: {
+      position: "relative",
+      alignItems: "center",
+      marginRight: spacing.sm,
+      paddingTop: 10,
     },
     badge: {
       paddingHorizontal: 8,
