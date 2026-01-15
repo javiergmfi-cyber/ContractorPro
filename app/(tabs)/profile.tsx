@@ -488,7 +488,7 @@ export default function Profile() {
             <SettingRow
               icon={<Bell size={20} color={isPro ? colors.primary : colors.textTertiary} />}
               title="Auto-Chase Unpaid Invoices"
-              subtitle={isPro ? "Automatically follow up on overdue invoices until you get paid" : "Get paid 2x faster. We chase payments so you don't have to."}
+              subtitle={isPro ? "We text & email clients who haven't paid" : "We text & email your clients until they pay. You do nothing."}
               rightElement={
                 isPro ? (
                   <Switch
