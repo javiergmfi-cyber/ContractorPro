@@ -475,73 +475,43 @@ export default function Profile() {
         >
           <Text style={[styles.sectionTitle, { marginBottom: spacing.sm }]}>Payment Collection</Text>
 
-          {/* Premium Upsell Card for Non-Pro Users */}
-          {!isPro ? (
+          {/* Payment Collection Card */}
+          <View style={styles.settingsCard}>
             <Pressable
-              onPress={() => router.push("/paywall?trigger=reminder_fatigue")}
-              style={({ pressed }) => [
-                styles.proUpsellCard,
-                {
-                  backgroundColor: colors.card,
-                  borderRadius: radius.xl,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                  transform: [{ scale: pressed ? 0.98 : 1 }],
-                },
-              ]}
+              onPress={() => !isPro && router.push("/paywall?trigger=reminder_fatigue")}
+              style={styles.settingRow}
             >
-              {/* Decorative gradient header */}
-              <View style={[styles.proUpsellHeader, { backgroundColor: colors.primary + "08" }]}>
-                <View style={[styles.proUpsellIconLarge, { backgroundColor: colors.primary + "15" }]}>
-                  <Bell size={32} color={colors.primary} strokeWidth={1.5} />
-                </View>
-                <View style={[styles.proUpsellBadge, { backgroundColor: colors.systemOrange + "18" }]}>
-                  <Crown size={12} color={colors.systemOrange} />
-                  <Text style={[typography.caption2, { color: colors.systemOrange, fontWeight: "700", marginLeft: 4 }]}>
-                    PRO
+              <View style={[styles.settingIcon, { backgroundColor: colors.primary + "15" }]}>
+                <Bell size={20} color={colors.primary} />
+              </View>
+              <View style={styles.settingContent}>
+                <View style={styles.settingTitleRow}>
+                  <Text style={[typography.body, { color: colors.text, fontWeight: "600" }]}>
+                    Auto-Chase Unpaid Invoices
                   </Text>
+                  {!isPro && (
+                    <View style={[styles.proPillSmall, { backgroundColor: colors.systemOrange + "15" }]}>
+                      <Crown size={10} color={colors.systemOrange} />
+                      <Text style={[styles.proPillText, { color: colors.systemOrange }]}>PRO</Text>
+                    </View>
+                  )}
                 </View>
-              </View>
-
-              {/* Content */}
-              <View style={styles.proUpsellContent}>
-                <Text style={[styles.proUpsellTitle, { color: colors.text }]}>
-                  Auto-Chase Unpaid Invoices
+                <Text style={[typography.caption1, { color: colors.textTertiary, marginTop: 2 }]}>
+                  {isPro ? "We text & email clients who haven't paid" : "We chase payments so you don't have to"}
                 </Text>
-                <Text style={[styles.proUpsellDescription, { color: colors.textSecondary }]}>
-                  We text & email your clients until they pay. You do nothing.
-                </Text>
-
-                {/* CTA Button */}
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.proUpsellButton,
-                    { backgroundColor: colors.primary, opacity: pressed ? 0.9 : 1 },
-                  ]}
-                >
-                  <Text style={styles.proUpsellButtonText}>Unlock Feature</Text>
-                  <ChevronRight size={18} color="#FFFFFF" />
-                </Pressable>
               </View>
+              {isPro ? (
+                <Switch
+                  value={reminderSettings?.enabled || false}
+                  onValueChange={handleToggleReminders}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  thumbColor="#FFFFFF"
+                />
+              ) : (
+                <ChevronRight size={20} color={colors.textTertiary} />
+              )}
             </Pressable>
-          ) : (
-            /* Pro Users - Normal Settings Card */
-            <View style={styles.settingsCard}>
-              <SettingRow
-                icon={<Bell size={20} color={colors.primary} />}
-                title="Auto-Chase Unpaid Invoices"
-                subtitle="We text & email clients who haven't paid"
-                rightElement={
-                  <Switch
-                    value={reminderSettings?.enabled || false}
-                    onValueChange={handleToggleReminders}
-                    trackColor={{ false: colors.border, true: colors.primary }}
-                    thumbColor="#FFFFFF"
-                  />
-                }
-              />
-
-            {reminderSettings?.enabled && (
+          {isPro && reminderSettings?.enabled && (
               <>
                 <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
@@ -596,8 +566,7 @@ export default function Profile() {
                 />
               </>
             )}
-            </View>
-          )}
+          </View>
         </Animated.View>
 
         {/* Data & Sync Section */}
@@ -1022,6 +991,23 @@ const createStyles = (colors: any, isDark: boolean, spacing: any, radius: any, t
     },
     settingContent: {
       flex: 1,
+    },
+    settingTitleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
+    proPillSmall: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 6,
+      gap: 3,
+    },
+    proPillText: {
+      fontSize: 10,
+      fontWeight: "700",
     },
     badge: {
       paddingHorizontal: 8,
