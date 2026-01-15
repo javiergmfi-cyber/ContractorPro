@@ -28,6 +28,7 @@ import {
   Droplet,
   Check,
   Shield,
+  Grid3x3,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { VoiceButton } from "@/components/VoiceButton";
@@ -52,6 +53,7 @@ const TRADES = [
   { id: "painter", name: "Painter", icon: Paintbrush, color: "#AF52DE" },
   { id: "handyman", name: "Handyman", icon: Wrench, color: "#34C759" },
   { id: "hvac", name: "HVAC", icon: Thermometer, color: "#FF3B30" },
+  { id: "tile_stone", name: "Tile / Stone", icon: Grid3x3, color: "#5AC8FA" },
   { id: "general", name: "General Contractor", icon: HardHat, color: "#8E8E93" },
   { id: "carpenter", name: "Carpenter", icon: Hammer, color: "#A2845E" },
   { id: "other", name: "Other", icon: Wrench, color: "#636366" },

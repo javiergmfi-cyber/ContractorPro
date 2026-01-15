@@ -47,6 +47,10 @@ const TRADE_TEMPLATES: Record<string, { description: string; amount: number }[]>
     { description: "System Inspection", amount: 12500 },
     { description: "Labor (per hour)", amount: 9500 },
   ],
+  tile_stone: [
+    { description: "Tile Installation (per sq ft)", amount: 1200 },
+    { description: "Materials & Grout", amount: 25000 },
+  ],
   general: [
     { description: "Project Consultation", amount: 25000 },
     { description: "Labor (per hour)", amount: 7500 },
