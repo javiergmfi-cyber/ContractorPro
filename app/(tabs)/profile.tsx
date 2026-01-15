@@ -98,6 +98,7 @@ export default function Profile() {
   const [editingTemplate, setEditingTemplate] = useState(false);
   const [templateText, setTemplateText] = useState("");
   const [showTradeModal, setShowTradeModal] = useState(false);
+  const [taxRateFocused, setTaxRateFocused] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
@@ -412,13 +413,24 @@ export default function Profile() {
             autoCapitalize="words"
           />
 
-          <InputField
-            label="Tax Rate (%)"
-            value={profile?.tax_rate?.toString() || "0"}
-            onChangeText={(text) => updateProfile({ tax_rate: parseFloat(text) || 0 })}
-            placeholder="0"
-            keyboardType="decimal-pad"
-          />
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Tax Rate</Text>
+            <View style={styles.inputWithSuffix}>
+              <TextInput
+                style={[styles.input, styles.inputWithSuffixField]}
+                value={profile?.tax_rate?.toString() || "0"}
+                onChangeText={(text) => updateProfile({ tax_rate: parseFloat(text) || 0 })}
+                placeholder="0"
+                placeholderTextColor={colors.textTertiary}
+                keyboardType="decimal-pad"
+                onFocus={() => setTaxRateFocused(true)}
+                onBlur={() => setTaxRateFocused(false)}
+              />
+              {!taxRateFocused && (
+                <Text style={[styles.inputSuffix, { color: colors.textTertiary }]}>%</Text>
+              )}
+            </View>
+          </View>
 
           {/* Trade Selection */}
           <View style={styles.inputContainer}>
@@ -1009,6 +1021,7 @@ const createStyles = (colors: any, isDark: boolean, spacing: any, radius: any, t
     },
     formSection: {
       paddingHorizontal: spacing.lg,
+      marginTop: spacing.lg,
     },
     inputContainer: {
       marginBottom: spacing.md,
@@ -1032,6 +1045,24 @@ const createStyles = (colors: any, isDark: boolean, spacing: any, radius: any, t
     inputMultiline: {
       minHeight: 80,
       textAlignVertical: "top",
+    },
+    inputWithSuffix: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.backgroundSecondary,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    inputWithSuffixField: {
+      flex: 1,
+      borderWidth: 0,
+      backgroundColor: "transparent",
+    },
+    inputSuffix: {
+      paddingRight: spacing.md,
+      fontSize: 17,
+      fontWeight: "400",
     },
     section: {
       paddingHorizontal: spacing.lg,
