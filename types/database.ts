@@ -27,6 +27,7 @@ export interface Database {
           phone: string | null;
           address: string | null;
           logo_url: string | null;
+          trade: string | null;
           stripe_account_id: string | null;
           charges_enabled: boolean;
           payouts_enabled: boolean;
@@ -48,6 +49,7 @@ export interface Database {
           phone?: string | null;
           address?: string | null;
           logo_url?: string | null;
+          trade?: string | null;
           stripe_account_id?: string | null;
           charges_enabled?: boolean;
           payouts_enabled?: boolean;
@@ -69,6 +71,7 @@ export interface Database {
           phone?: string | null;
           address?: string | null;
           logo_url?: string | null;
+          trade?: string | null;
           stripe_account_id?: string | null;
           charges_enabled?: boolean;
           payouts_enabled?: boolean;

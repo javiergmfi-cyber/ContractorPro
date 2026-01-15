@@ -29,6 +29,8 @@ import {
   Cloud,
   CloudOff,
   RefreshCw,
+  Lock,
+  Crown,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
@@ -36,6 +38,7 @@ import { Image } from "react-native";
 import { useProfileStore } from "@/store/useProfileStore";
 import { useReminderStore } from "@/store/useReminderStore";
 import { useOfflineStore } from "@/store/useOfflineStore";
+import { useSubscriptionStore } from "@/store/useSubscriptionStore";
 import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/Button";
 
@@ -66,6 +69,7 @@ export default function Profile() {
     syncNow,
     initialize: initOffline,
   } = useOfflineStore();
+  const { isPro, canUseBadCopAutopilot } = useSubscriptionStore();
 
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(false);
@@ -102,6 +106,13 @@ export default function Profile() {
 
   const pickImage = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    // Check if user has Pro for custom branding
+    if (!isPro) {
+      router.push("/paywall?trigger=branding");
+      return;
+    }
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
@@ -121,6 +132,14 @@ export default function Profile() {
 
   const handleToggleReminders = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    // Check if trying to enable without Pro subscription
+    if (!reminderSettings?.enabled && !canUseBadCopAutopilot()) {
+      // Navigate to paywall with context
+      router.push("/paywall?trigger=reminder_fatigue");
+      return;
+    }
+
     try {
       await toggleEnabled();
     } catch (error) {
@@ -300,11 +319,17 @@ export default function Profile() {
                 <Building2 size={32} color={colors.textTertiary} />
               </View>
             )}
-            <View style={styles.cameraButton}>
-              <Camera size={16} color="#FFFFFF" />
+            <View style={[styles.cameraButton, { backgroundColor: isPro ? colors.primary : colors.systemOrange }]}>
+              {isPro ? (
+                <Camera size={16} color="#FFFFFF" />
+              ) : (
+                <Lock size={14} color="#FFFFFF" />
+              )}
             </View>
           </Pressable>
-          <Text style={styles.logoHint}>Tap to add logo</Text>
+          <Text style={styles.logoHint}>
+            {isPro ? "Tap to add logo" : "Pro feature • Tap to upgrade"}
+          </Text>
         </Animated.View>
 
         {/* Business Info Form */}
@@ -379,19 +404,39 @@ export default function Profile() {
             { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
           ]}
         >
-          <Text style={styles.sectionTitle}>Auto-Reminders</Text>
+          <View style={styles.sectionTitleRow}>
+            <Text style={styles.sectionTitle}>Auto-Reminders</Text>
+            {!isPro && (
+              <View style={[styles.proBadge, { backgroundColor: colors.systemOrange + "20" }]}>
+                <Crown size={12} color={colors.systemOrange} />
+                <Text style={[typography.caption2, { color: colors.systemOrange, fontWeight: "700", marginLeft: 4 }]}>
+                  PRO
+                </Text>
+              </View>
+            )}
+          </View>
           <View style={styles.settingsCard}>
             <SettingRow
-              icon={<Bell size={20} color={colors.primary} />}
+              icon={<Bell size={20} color={isPro ? colors.primary : colors.textTertiary} />}
               title="Enable Auto-Reminders"
-              subtitle="Automatically remind clients about overdue invoices"
+              subtitle={isPro ? "Automatically remind clients about overdue invoices" : "Upgrade to Pro to enable automatic reminders"}
               rightElement={
-                <Switch
-                  value={reminderSettings?.enabled || false}
-                  onValueChange={handleToggleReminders}
-                  trackColor={{ false: colors.border, true: colors.primary }}
-                  thumbColor="#FFFFFF"
-                />
+                isPro ? (
+                  <Switch
+                    value={reminderSettings?.enabled || false}
+                    onValueChange={handleToggleReminders}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    thumbColor="#FFFFFF"
+                  />
+                ) : (
+                  <Pressable
+                    onPress={() => router.push("/paywall?trigger=reminder_fatigue")}
+                    style={[styles.unlockButton, { backgroundColor: colors.primary }]}
+                  >
+                    <Lock size={14} color="#FFFFFF" />
+                    <Text style={styles.unlockButtonText}>Unlock</Text>
+                  </Pressable>
+                )
               }
             />
 
@@ -764,13 +809,38 @@ const createStyles = (colors: any, isDark: boolean, spacing: any, radius: any, t
       paddingHorizontal: spacing.lg,
       marginTop: spacing.lg,
     },
+    sectionTitleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: spacing.sm,
+    },
     sectionTitle: {
       ...typography.footnote,
       color: colors.textTertiary,
       fontWeight: "600",
-      marginBottom: spacing.sm,
       textTransform: "uppercase",
       letterSpacing: 0.5,
+    },
+    proBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 12,
+    },
+    unlockButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 8,
+      gap: 4,
+    },
+    unlockButtonText: {
+      color: "#FFFFFF",
+      fontSize: 13,
+      fontWeight: "600",
     },
     settingsCard: {
       backgroundColor: colors.card,

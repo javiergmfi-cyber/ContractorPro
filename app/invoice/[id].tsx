@@ -26,6 +26,8 @@ import {
   CreditCard,
   ExternalLink,
   MoreHorizontal,
+  Zap,
+  ChevronRight,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
@@ -33,6 +35,7 @@ import { useTheme, getStatusColor } from "@/lib/theme";
 import { Button } from "@/components/ui/Button";
 import { useInvoiceStore } from "@/store/useInvoiceStore";
 import { useProfileStore } from "@/store/useProfileStore";
+import { useSubscriptionStore } from "@/store/useSubscriptionStore";
 import { Invoice, formatCurrency, formatRelativeDate } from "@/types";
 import { sendInvoice, generateInvoicePDF } from "@/services/invoice";
 import { getPaymentLink } from "@/services/stripe";
@@ -60,6 +63,7 @@ export default function InvoiceDetail() {
   const { colors, typography, spacing, radius, shadows, isDark } = useTheme();
   const { invoices, fetchInvoice, updateInvoice } = useInvoiceStore();
   const { profile } = useProfileStore();
+  const { isPro, canUseBadCopAutopilot } = useSubscriptionStore();
 
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [invoiceItems, setInvoiceItems] = useState<any[]>([]);
@@ -616,6 +620,42 @@ export default function InvoiceDetail() {
           </Pressable>
         )}
 
+        {/* Pro Upsell Banner - Show when invoice is unpaid for 5+ days and user is not Pro */}
+        {!isPro &&
+          invoice.status !== "paid" &&
+          invoice.status !== "void" &&
+          invoice.status !== "draft" &&
+          (() => {
+            const daysSinceSent = Math.floor(
+              (new Date().getTime() - new Date(invoice.created_at).getTime()) / (1000 * 60 * 60 * 24)
+            );
+            return daysSinceSent >= 5;
+          })() && (
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              router.push("/paywall?trigger=unpaid_invoice");
+            }}
+            style={[
+              styles.proUpsellBanner,
+              { backgroundColor: colors.systemOrange + "15", borderRadius: radius.md },
+            ]}
+          >
+            <View style={[styles.proUpsellIcon, { backgroundColor: colors.systemOrange + "20" }]}>
+              <Zap size={18} color={colors.systemOrange} />
+            </View>
+            <View style={{ flex: 1, marginLeft: spacing.sm }}>
+              <Text style={[typography.footnote, { color: colors.text, fontWeight: "600" }]}>
+                Tired of Checking?
+              </Text>
+              <Text style={[typography.caption1, { color: colors.textSecondary }]}>
+                Let Bad Cop chase this invoice automatically
+              </Text>
+            </View>
+            <ChevronRight size={18} color={colors.systemOrange} />
+          </Pressable>
+        )}
+
         {/* From (Business Info) */}
         {profile?.business_name && (
           <View style={[styles.fromSection, { borderTopColor: colors.border }]}>
@@ -789,6 +829,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 16,
     marginBottom: 16,
+  },
+  proUpsellBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    marginBottom: 16,
+  },
+  proUpsellIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
   },
   fromSection: {
     paddingTop: 24,

@@ -4,6 +4,7 @@ import * as Sharing from "expo-sharing";
 import { supabase } from "./supabase";
 import { Invoice } from "@/types";
 import { getPaymentLink } from "./stripe";
+import { trackInvoiceSent, trackReminderSent } from "./activity";
 
 /**
  * Invoice Service
@@ -84,6 +85,9 @@ export async function sendInvoice(
       default:
         await shareNative(invoice, message, pdfResult?.pdfUrl);
     }
+
+    // Track activity event
+    await trackInvoiceSent(invoice.id, invoice.client_name, invoice.total);
 
     return {
       success: true,

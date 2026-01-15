@@ -8,6 +8,8 @@ import {
   Pressable,
   RefreshControl,
   Dimensions,
+  Modal,
+  FlatList,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -17,18 +19,43 @@ import {
   TrendingUp,
   AlertCircle,
   ChevronRight,
+  Wrench,
+  Zap,
+  Paintbrush,
+  Hammer,
+  Thermometer,
+  HardHat,
+  Droplet,
+  Check,
+  Shield,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { VoiceButton } from "@/components/VoiceButton";
 import { RecordingOverlay } from "@/components/RecordingOverlay";
 import { AnimatedCurrency } from "@/components/AnimatedNumber";
 import { MonogramAvatar } from "@/components/MonogramAvatar";
+import { ActivityFeed } from "@/components/ActivityFeed";
 import { useDashboardStore } from "@/store/useDashboardStore";
 import { useProfileStore } from "@/store/useProfileStore";
 import { useInvoiceStore } from "@/store/useInvoiceStore";
 import { useTheme } from "@/lib/theme";
+import { usePreflightStore } from "@/store/usePreflightStore";
+import { useSubscriptionStore } from "@/store/useSubscriptionStore";
+import { useActivityStore } from "@/store/useActivityStore";
 import { startRecording, stopRecording } from "@/services/audio";
 import { processVoiceToInvoice } from "@/services/ai";
+
+// Trade options for first-run experience
+const TRADES = [
+  { id: "plumber", name: "Plumber", icon: Droplet, color: "#007AFF" },
+  { id: "electrician", name: "Electrician", icon: Zap, color: "#FF9500" },
+  { id: "painter", name: "Painter", icon: Paintbrush, color: "#AF52DE" },
+  { id: "handyman", name: "Handyman", icon: Wrench, color: "#34C759" },
+  { id: "hvac", name: "HVAC", icon: Thermometer, color: "#FF3B30" },
+  { id: "general", name: "General Contractor", icon: HardHat, color: "#8E8E93" },
+  { id: "carpenter", name: "Carpenter", icon: Hammer, color: "#A2845E" },
+  { id: "other", name: "Other", icon: Wrench, color: "#636366" },
+];
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const CARD_MARGIN = 20;
@@ -44,14 +71,23 @@ export default function Dashboard() {
   const { isDark, colors, glass, typography, spacing, radius } = useTheme();
 
   const { stats, isLoading, fetchDashboardStats } = useDashboardStore();
-  const { profile, fetchProfile } = useProfileStore();
+  const { profile, fetchProfile, updateProfile } = useProfileStore();
   const { invoices, fetchInvoices, setPendingInvoice } = useInvoiceStore();
+  const { pendingReminders, fetchPendingReminders, showPreflightModal } = usePreflightStore();
+  const { isPro } = useSubscriptionStore();
+  const { events: activityEvents, fetchRecentActivity } = useActivityStore();
 
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [tapTimeout, setTapTimeout] = useState<NodeJS.Timeout | null>(null);
   const [isLongPress, setIsLongPress] = useState(false);
+  const [showTradeModal, setShowTradeModal] = useState(false);
+  const [selectedTrade, setSelectedTrade] = useState<string | null>(null);
+
+  // Check if this is first run (no invoices and no trade selected)
+  const isFirstRun = invoices.length === 0;
+  const needsTradeSelection = isFirstRun && !profile?.trade;
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -62,6 +98,13 @@ export default function Dashboard() {
     fetchDashboardStats();
     fetchProfile();
     fetchInvoices();
+    // Fetch pending reminders for Pro users
+    if (isPro) {
+      fetchPendingReminders();
+    }
+
+    // Fetch recent activity
+    fetchRecentActivity();
 
     // Entry animation
     Animated.parallel([
@@ -151,6 +194,20 @@ export default function Dashboard() {
     }
   };
 
+  // Handle trade selection
+  const handleTradeSelect = async (tradeId: string) => {
+    setSelectedTrade(tradeId);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    // Save to profile
+    try {
+      await updateProfile({ trade: tradeId });
+      setShowTradeModal(false);
+    } catch (error) {
+      console.error("Error saving trade:", error);
+    }
+  };
+
   // Recent invoices (last 5)
   const recentInvoices = invoices.slice(0, 5);
   const overdueCount = stats?.overdueInvoicesCount || 0;
@@ -170,8 +227,63 @@ export default function Dashboard() {
         }
       >
         {/* ═══════════════════════════════════════════════════════════
-            REVENUE CARD - Apple Cash Style Hero
+            FIRST RUN EMPTY STATE - "Let's Get You Paid"
         ═══════════════════════════════════════════════════════════ */}
+        {isFirstRun && (
+          <Animated.View
+            style={[
+              styles.emptyStateContainer,
+              {
+                opacity: fadeAnim,
+                transform: [{ scale: scaleAnim }],
+              },
+            ]}
+          >
+            {/* Illustration Circle */}
+            <View style={[styles.emptyIllustration, { backgroundColor: colors.primary + "12" }]}>
+              <TrendingUp size={56} color={colors.primary} strokeWidth={1.5} />
+            </View>
+
+            {/* Title */}
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>
+              Let's Get You Paid
+            </Text>
+
+            {/* Subtitle */}
+            <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+              Create your first invoice in seconds.{"\n"}We'll track the payment for you.
+            </Text>
+
+            {/* Trade Selection CTA */}
+            {!profile?.trade && (
+              <Pressable
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  setShowTradeModal(true);
+                }}
+                style={[styles.tradeSelectButton, { backgroundColor: colors.backgroundSecondary }]}
+              >
+                <Wrench size={18} color={colors.textTertiary} />
+                <Text style={[styles.tradeSelectText, { color: colors.text }]}>
+                  Select your trade
+                </Text>
+                <ChevronRight size={16} color={colors.textTertiary} />
+              </Pressable>
+            )}
+
+            {/* Arrow pointing to voice button */}
+            <View style={styles.emptyArrowHint}>
+              <Text style={[styles.emptyHintText, { color: colors.textTertiary }]}>
+                ↓ Tap the button below to start
+              </Text>
+            </View>
+          </Animated.View>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════
+            REVENUE CARD - Apple Cash Style Hero (Hidden on first run)
+        ═══════════════════════════════════════════════════════════ */}
+        {!isFirstRun && (
         <Animated.View
           style={[
             styles.revenueCard,
@@ -238,6 +350,42 @@ export default function Dashboard() {
             </View>
           </LinearGradient>
         </Animated.View>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════
+            PRE-FLIGHT CHECK BANNER - Bad Cop reminders pending
+        ═══════════════════════════════════════════════════════════ */}
+        {isPro && pendingReminders.length > 0 && (
+          <Animated.View style={[styles.preflightBanner, { opacity: fadeAnim }]}>
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                showPreflightModal();
+              }}
+              style={({ pressed }) => [
+                styles.preflightCard,
+                {
+                  backgroundColor: colors.primary + "12",
+                  borderColor: colors.primary + "25",
+                  transform: [{ scale: pressed ? 0.98 : 1 }],
+                },
+              ]}
+            >
+              <View style={[styles.preflightIcon, { backgroundColor: colors.primary + "20" }]}>
+                <Shield size={22} color={colors.primary} />
+              </View>
+              <View style={styles.preflightContent}>
+                <Text style={[styles.preflightTitle, { color: colors.text }]}>
+                  Bad Cop Ready
+                </Text>
+                <Text style={[styles.preflightSubtitle, { color: colors.textSecondary }]}>
+                  {pendingReminders.length} reminder{pendingReminders.length !== 1 ? "s" : ""} pending • Tap to review
+                </Text>
+              </View>
+              <ChevronRight size={20} color={colors.primary} />
+            </Pressable>
+          </Animated.View>
+        )}
 
         {/* ═══════════════════════════════════════════════════════════
             RECENT ACTIVITY - Horizontal Glass Cards
@@ -330,40 +478,58 @@ export default function Dashboard() {
           </Animated.View>
         )}
 
-        {/* Quick Stats Row */}
-        <Animated.View
-          style={[
-            styles.quickStatsRow,
-            { opacity: fadeAnim }
-          ]}
-        >
-          <View style={[styles.quickStatCard, { backgroundColor: colors.card, borderRadius: radius.lg }]}>
-            <Text style={[styles.quickStatValue, { color: colors.text }]}>
-              {stats?.totalInvoicesCount || 0}
-            </Text>
-            <Text style={[styles.quickStatLabel, { color: colors.textTertiary }]}>
-              Invoices
-            </Text>
-          </View>
+        {/* Quick Stats Row - Hidden on first run */}
+        {!isFirstRun && (
+          <Animated.View
+            style={[
+              styles.quickStatsRow,
+              { opacity: fadeAnim }
+            ]}
+          >
+            <View style={[styles.quickStatCard, { backgroundColor: colors.card, borderRadius: radius.lg }]}>
+              <Text style={[styles.quickStatValue, { color: colors.text }]}>
+                {stats?.totalInvoicesCount || 0}
+              </Text>
+              <Text style={[styles.quickStatLabel, { color: colors.textTertiary }]}>
+                Invoices
+              </Text>
+            </View>
 
-          <View style={[styles.quickStatCard, { backgroundColor: colors.card, borderRadius: radius.lg }]}>
-            <Text style={[styles.quickStatValue, { color: colors.text }]}>
-              {stats?.totalClientsCount || 0}
-            </Text>
-            <Text style={[styles.quickStatLabel, { color: colors.textTertiary }]}>
-              Clients
-            </Text>
-          </View>
+            <View style={[styles.quickStatCard, { backgroundColor: colors.card, borderRadius: radius.lg }]}>
+              <Text style={[styles.quickStatValue, { color: colors.text }]}>
+                {stats?.totalClientsCount || 0}
+              </Text>
+              <Text style={[styles.quickStatLabel, { color: colors.textTertiary }]}>
+                Clients
+              </Text>
+            </View>
 
-          <View style={[styles.quickStatCard, { backgroundColor: colors.card, borderRadius: radius.lg }]}>
-            <Text style={[styles.quickStatValue, { color: colors.primary }]}>
-              {formatCurrency(stats?.pendingAmount || 0, profile?.default_currency, true)}
-            </Text>
-            <Text style={[styles.quickStatLabel, { color: colors.textTertiary }]}>
-              Pending
-            </Text>
-          </View>
-        </Animated.View>
+            <View style={[styles.quickStatCard, { backgroundColor: colors.card, borderRadius: radius.lg }]}>
+              <Text style={[styles.quickStatValue, { color: colors.primary }]}>
+                {formatCurrency(stats?.pendingAmount || 0, profile?.default_currency, true)}
+              </Text>
+              <Text style={[styles.quickStatLabel, { color: colors.textTertiary }]}>
+                Pending
+              </Text>
+            </View>
+          </Animated.View>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════
+            ACTIVITY FEED - Recent System Events
+        ═══════════════════════════════════════════════════════════ */}
+        {!isFirstRun && activityEvents.length > 0 && (
+          <Animated.View style={[styles.activitySection, { opacity: fadeAnim }]}>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                Activity
+              </Text>
+            </View>
+            <View style={[styles.activityCard, { backgroundColor: colors.card, borderRadius: radius.lg }]}>
+              <ActivityFeed limit={5} showViewAll={true} />
+            </View>
+          </Animated.View>
+        )}
 
         {/* Bottom spacer for voice button */}
         <View style={{ height: 200 }} />
@@ -388,6 +554,86 @@ export default function Dashboard() {
       </View>
 
       <RecordingOverlay visible={isRecording} duration={recordingDuration} />
+
+      {/* ═══════════════════════════════════════════════════════════
+          TRADE SELECTION MODAL - First Run Experience
+      ═══════════════════════════════════════════════════════════ */}
+      <Modal
+        visible={showTradeModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowTradeModal(false)}
+      >
+        <View style={[styles.tradeModalContainer, { backgroundColor: colors.background }]}>
+          <SafeAreaView style={styles.tradeModalContent}>
+            {/* Header */}
+            <View style={styles.tradeModalHeader}>
+              <Text style={[styles.tradeModalTitle, { color: colors.text }]}>
+                What's your trade?
+              </Text>
+              <Text style={[styles.tradeModalSubtitle, { color: colors.textTertiary }]}>
+                We'll customize your experience
+              </Text>
+            </View>
+
+            {/* Trade Grid */}
+            <FlatList
+              data={TRADES}
+              numColumns={2}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.tradeGrid}
+              columnWrapperStyle={styles.tradeRow}
+              renderItem={({ item }) => {
+                const TradeIcon = item.icon;
+                const isSelected = selectedTrade === item.id || profile?.trade === item.id;
+
+                return (
+                  <Pressable
+                    onPress={() => handleTradeSelect(item.id)}
+                    style={({ pressed }) => [
+                      styles.tradeCard,
+                      {
+                        backgroundColor: isSelected
+                          ? item.color + "20"
+                          : colors.card,
+                        borderColor: isSelected ? item.color : colors.border,
+                        transform: [{ scale: pressed ? 0.97 : 1 }],
+                      },
+                    ]}
+                  >
+                    {isSelected && (
+                      <View style={[styles.tradeCheckmark, { backgroundColor: item.color }]}>
+                        <Check size={12} color="#FFFFFF" strokeWidth={3} />
+                      </View>
+                    )}
+                    <View style={[styles.tradeIconContainer, { backgroundColor: item.color + "15" }]}>
+                      <TradeIcon size={28} color={item.color} strokeWidth={2} />
+                    </View>
+                    <Text
+                      style={[
+                        styles.tradeName,
+                        { color: isSelected ? item.color : colors.text },
+                      ]}
+                    >
+                      {item.name}
+                    </Text>
+                  </Pressable>
+                );
+              }}
+            />
+
+            {/* Skip Button */}
+            <Pressable
+              onPress={() => setShowTradeModal(false)}
+              style={styles.tradeSkipButton}
+            >
+              <Text style={[styles.tradeSkipText, { color: colors.textTertiary }]}>
+                Skip for now
+              </Text>
+            </Pressable>
+          </SafeAreaView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -472,6 +718,42 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     letterSpacing: -0.1,
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // PRE-FLIGHT BANNER
+  // ═══════════════════════════════════════════════════════════
+  preflightBanner: {
+    marginHorizontal: CARD_MARGIN,
+    marginBottom: 16,
+  },
+  preflightCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  preflightIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  preflightContent: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  preflightTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    letterSpacing: -0.3,
+  },
+  preflightSubtitle: {
+    fontSize: 13,
+    fontWeight: "500",
+    marginTop: 2,
   },
 
   // ═══════════════════════════════════════════════════════════
@@ -568,6 +850,22 @@ const styles = StyleSheet.create({
   },
 
   // ═══════════════════════════════════════════════════════════
+  // ACTIVITY FEED
+  // ═══════════════════════════════════════════════════════════
+  activitySection: {
+    marginTop: 24,
+    marginHorizontal: CARD_MARGIN,
+  },
+  activityCard: {
+    padding: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+
+  // ═══════════════════════════════════════════════════════════
   // INPUT ACTIONS
   // ═══════════════════════════════════════════════════════════
   inputActionsContainer: {
@@ -584,5 +882,132 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "500",
     letterSpacing: -0.1,
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // FIRST RUN EMPTY STATE
+  // ═══════════════════════════════════════════════════════════
+  emptyStateContainer: {
+    alignItems: "center",
+    paddingHorizontal: 32,
+    paddingTop: 40,
+    paddingBottom: 24,
+  },
+  emptyIllustration: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 24,
+  },
+  emptyTitle: {
+    fontSize: 28,
+    fontWeight: "800",
+    letterSpacing: -0.6,
+    textAlign: "center",
+    marginBottom: 12,
+  },
+  emptySubtitle: {
+    fontSize: 16,
+    fontWeight: "500",
+    textAlign: "center",
+    lineHeight: 24,
+    marginBottom: 24,
+  },
+  tradeSelectButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 14,
+    gap: 12,
+    marginBottom: 32,
+  },
+  tradeSelectText: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: "500",
+  },
+  emptyArrowHint: {
+    marginTop: 24,
+  },
+  emptyHintText: {
+    fontSize: 14,
+    fontWeight: "500",
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // TRADE SELECTION MODAL
+  // ═══════════════════════════════════════════════════════════
+  tradeModalContainer: {
+    flex: 1,
+  },
+  tradeModalContent: {
+    flex: 1,
+  },
+  tradeModalHeader: {
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 16,
+  },
+  tradeModalTitle: {
+    fontSize: 28,
+    fontWeight: "800",
+    letterSpacing: -0.6,
+    marginBottom: 8,
+  },
+  tradeModalSubtitle: {
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  tradeGrid: {
+    padding: 16,
+    gap: 12,
+  },
+  tradeRow: {
+    gap: 12,
+  },
+  tradeCard: {
+    flex: 1,
+    aspectRatio: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 20,
+    borderWidth: 2,
+    padding: 16,
+    position: "relative",
+  },
+  tradeCheckmark: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tradeIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  tradeName: {
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  tradeSkipButton: {
+    alignItems: "center",
+    paddingVertical: 16,
+    marginBottom: 24,
+  },
+  tradeSkipText: {
+    fontSize: 15,
+    fontWeight: "500",
   },
 });

@@ -5,6 +5,8 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { View, ActivityIndicator } from "react-native";
 import { ThemeProvider, useTheme } from "../lib/theme";
 import { AuthProvider, useAuth } from "../contexts/AuthContext";
+import { PreflightModal } from "../components/PreflightModal";
+import { useNotifications } from "../hooks/useNotifications";
 import "../global.css";
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
@@ -40,6 +42,9 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
 function RootLayoutContent() {
   const { isDark, colors } = useTheme();
+
+  // Initialize push notifications
+  useNotifications();
 
   return (
     <>
@@ -84,6 +89,9 @@ function RootLayoutContent() {
           />
         </Stack>
       </AuthGuard>
+
+      {/* Pre-Flight Check Modal - Global overlay */}
+      <PreflightModal />
     </>
   );
 }

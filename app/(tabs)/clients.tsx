@@ -23,6 +23,9 @@ import {
   X,
   UserPlus,
   Trophy,
+  Zap,
+  Clock,
+  AlertTriangle,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { useClientStore } from "@/store/useClientStore";
@@ -87,7 +90,7 @@ export default function ClientsScreen() {
     return () => breathe.stop();
   }, []);
 
-  // Calculate lifetime value for each client
+  // Calculate lifetime value and Trust Score (avg payment days) for each client
   const clientsWithLTV = useMemo(() => {
     return clients.map((client) => {
       const clientInvoices = invoices.filter(
@@ -96,7 +99,25 @@ export default function ClientsScreen() {
           inv.status === "paid"
       );
       const totalSpent = clientInvoices.reduce((sum, inv) => sum + inv.total, 0);
-      return { ...client, totalSpent };
+
+      // Calculate average payment days (Trust Score)
+      // Only consider invoices with both sent_at and paid_at
+      const invoicesWithPaymentData = clientInvoices.filter(
+        (inv) => inv.sent_at && inv.paid_at
+      );
+
+      let avgPaymentDays: number | null = null;
+      if (invoicesWithPaymentData.length > 0) {
+        const totalDays = invoicesWithPaymentData.reduce((sum, inv) => {
+          const sentDate = new Date(inv.sent_at!);
+          const paidDate = new Date(inv.paid_at!);
+          const daysDiff = Math.max(0, Math.floor((paidDate.getTime() - sentDate.getTime()) / (1000 * 60 * 60 * 24)));
+          return sum + daysDiff;
+        }, 0);
+        avgPaymentDays = Math.round(totalDays / invoicesWithPaymentData.length);
+      }
+
+      return { ...client, totalSpent, avgPaymentDays };
     });
   }, [clients, invoices]);
 
@@ -190,8 +211,33 @@ export default function ClientsScreen() {
     }).format(cents / 100);
   };
 
+  // Trust Score helpers
+  const getTrustScoreColor = (avgDays: number | null) => {
+    if (avgDays === null) return colors.textTertiary;
+    if (avgDays <= 3) return colors.statusPaid; // Green - Fast Payer
+    if (avgDays <= 14) return colors.systemOrange; // Yellow/Orange - Average
+    return colors.statusOverdue; // Red - Slow Payer
+  };
+
+  const getTrustScoreLabel = (avgDays: number | null) => {
+    if (avgDays === null) return null;
+    if (avgDays <= 3) return "Fast Payer";
+    if (avgDays <= 14) return "Average";
+    return "Slow Payer";
+  };
+
+  const getTrustScoreIcon = (avgDays: number | null) => {
+    if (avgDays === null) return null;
+    if (avgDays <= 3) return Zap; // Lightning bolt for fast payers
+    if (avgDays <= 14) return Clock; // Clock for average
+    return AlertTriangle; // Warning for slow payers
+  };
+
   const renderClientCard = ({ item, index }: { item: typeof clientsWithLTV[0]; index: number }) => {
     const isTopClient = index === 0 && item.totalSpent > 0;
+    const TrustIcon = getTrustScoreIcon(item.avgPaymentDays);
+    const trustColor = getTrustScoreColor(item.avgPaymentDays);
+    const trustLabel = getTrustScoreLabel(item.avgPaymentDays);
 
     return (
       <Pressable
@@ -228,7 +274,26 @@ export default function ClientsScreen() {
           >
             {item.name}
           </Text>
-          {(item.email || item.phone) && (
+
+          {/* Trust Score Badge */}
+          {item.avgPaymentDays !== null && TrustIcon && (
+            <View style={styles.trustScoreRow}>
+              <View
+                style={[
+                  styles.trustScoreBadge,
+                  { backgroundColor: trustColor + "18" },
+                ]}
+              >
+                <TrustIcon size={10} color={trustColor} strokeWidth={2.5} />
+                <Text style={[styles.trustScoreText, { color: trustColor }]}>
+                  {item.avgPaymentDays === 0 ? "Same day" : `${item.avgPaymentDays}d avg`}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* Contact info (shown only if no trust score) */}
+          {item.avgPaymentDays === null && (item.email || item.phone) && (
             <View style={styles.contactRow}>
               {item.phone && (
                 <View style={styles.contactItem}>
@@ -609,6 +674,24 @@ const styles = StyleSheet.create({
   contactText: {
     fontSize: 13,
     fontWeight: "400",
+  },
+  trustScoreRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 4,
+  },
+  trustScoreBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 100,
+  },
+  trustScoreText: {
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: -0.2,
   },
   ltvText: {
     fontSize: 17,

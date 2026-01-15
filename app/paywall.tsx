@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -7,9 +7,11 @@ import {
   Animated,
   Dimensions,
   Platform,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import {
@@ -19,8 +21,11 @@ import {
   Zap,
   Mic,
   RefreshCw,
+  Eye,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
+import { useSubscriptionStore } from "@/store/useSubscriptionStore";
+import { PurchasesPackage } from "react-native-purchases";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -54,19 +59,64 @@ const VALUE_PROPS = [
     description: "AI that chases payments so you don't have to",
   },
   {
-    icon: Mic,
-    title: "Unlimited Voice Invoices",
-    description: "Speak invoices in any language, anytime",
+    icon: Eye,
+    title: "Read Receipts",
+    description: "Know when clients view your invoices",
   },
   {
     icon: RefreshCw,
-    title: "Instant QuickBooks Sync",
-    description: "Automatic two-way bookkeeping sync",
+    title: "Next-Day Payouts",
+    description: "Get your money faster with instant payouts",
   },
 ];
 
+// Contextual messages based on paywall trigger
+const CONTEXTUAL_MESSAGES: Record<string, { headline: string; subheadline: string }> = {
+  default: {
+    headline: "Never Chase a\nPayment Again.",
+    subheadline: "Let the Bad Cop Bot do the dirty work.",
+  },
+  unpaid_invoice: {
+    headline: "Tired of\nChecking?",
+    subheadline: "Let Bad Cop chase this invoice automatically.",
+  },
+  reminder_fatigue: {
+    headline: "Stop Sending\nReminders.",
+    subheadline: "Bad Cop handles the awkward follow-ups.",
+  },
+  branding: {
+    headline: "Look More\nProfessional.",
+    subheadline: "Custom branding for premium invoices.",
+  },
+  read_receipts: {
+    headline: "Did They\nSee It?",
+    subheadline: "Know exactly when clients view your invoice.",
+  },
+};
+
 export default function PaywallScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ trigger?: string }>();
+  const trigger = params.trigger || "default";
+
+  // Subscription state
+  const {
+    offerings,
+    isLoading,
+    purchasePackage,
+    restorePurchases,
+    fetchOfferings,
+  } = useSubscriptionStore();
+
+  const [isPurchasing, setIsPurchasing] = useState(false);
+  const [selectedPackage, setSelectedPackage] = useState<PurchasesPackage | null>(null);
+
+  // Get monthly package from offerings
+  const monthlyPackage = offerings?.monthly || null;
+  const annualPackage = offerings?.annual || null;
+
+  // Get contextual message
+  const contextMessage = CONTEXTUAL_MESSAGES[trigger] || CONTEXTUAL_MESSAGES.default;
 
   // Animations
   const shieldGlow = useRef(new Animated.Value(0.5)).current;
@@ -75,6 +125,13 @@ export default function PaywallScreen() {
   const slideUp = useRef(new Animated.Value(50)).current;
   const cardSlide = useRef(new Animated.Value(100)).current;
   const shimmerPosition = useRef(new Animated.Value(-1)).current;
+
+  useEffect(() => {
+    // Fetch offerings if not loaded
+    if (!offerings) {
+      fetchOfferings();
+    }
+  }, []);
 
   useEffect(() => {
     // Shield breathing glow animation
@@ -153,10 +210,44 @@ export default function PaywallScreen() {
     router.back();
   };
 
-  const handleStartTrial = () => {
+  const handleStartTrial = async () => {
+    const packageToPurchase = selectedPackage || monthlyPackage;
+    if (!packageToPurchase) {
+      Alert.alert("Error", "Unable to load subscription options. Please try again.");
+      return;
+    }
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    // TODO: Implement Stripe subscription flow
-    console.log("Start trial pressed");
+    setIsPurchasing(true);
+
+    const result = await purchasePackage(packageToPurchase);
+
+    setIsPurchasing(false);
+
+    if (result.success) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      router.back();
+    } else if (result.error !== "cancelled") {
+      Alert.alert("Purchase Failed", result.error || "Something went wrong. Please try again.");
+    }
+  };
+
+  const handleRestore = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setIsPurchasing(true);
+
+    const result = await restorePurchases();
+
+    setIsPurchasing(false);
+
+    if (result.success) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert("Restored", "Your purchases have been restored.", [
+        { text: "OK", onPress: () => router.back() },
+      ]);
+    } else {
+      Alert.alert("Restore Failed", result.error || "No purchases found to restore.");
+    }
   };
 
   return (
@@ -250,14 +341,14 @@ export default function PaywallScreen() {
             </View>
           </Animated.View>
 
-          {/* Headline */}
+          {/* Headline - Contextual */}
           <Text style={styles.headline}>
-            Never Chase a{"\n"}Payment Again.
+            {contextMessage.headline}
           </Text>
 
-          {/* Subheadline */}
+          {/* Subheadline - Contextual */}
           <Text style={styles.subheadline}>
-            Let the Bad Cop Bot do the dirty work.
+            {contextMessage.subheadline}
           </Text>
         </Animated.View>
 
@@ -301,11 +392,23 @@ export default function PaywallScreen() {
         >
           {Platform.OS === "ios" ? (
             <BlurView intensity={20} tint="dark" style={styles.priceCardBlur}>
-              <PriceCardContent onStartTrial={handleStartTrial} shimmerPosition={shimmerPosition} />
+              <PriceCardContent
+                onStartTrial={handleStartTrial}
+                onRestore={handleRestore}
+                shimmerPosition={shimmerPosition}
+                monthlyPackage={monthlyPackage}
+                isPurchasing={isPurchasing}
+              />
             </BlurView>
           ) : (
             <View style={[styles.priceCardBlur, styles.priceCardAndroid]}>
-              <PriceCardContent onStartTrial={handleStartTrial} shimmerPosition={shimmerPosition} />
+              <PriceCardContent
+                onStartTrial={handleStartTrial}
+                onRestore={handleRestore}
+                shimmerPosition={shimmerPosition}
+                monthlyPackage={monthlyPackage}
+                isPurchasing={isPurchasing}
+              />
             </View>
           )}
         </Animated.View>
@@ -317,11 +420,24 @@ export default function PaywallScreen() {
 // Price Card Inner Content
 function PriceCardContent({
   onStartTrial,
+  onRestore,
   shimmerPosition,
+  monthlyPackage,
+  isPurchasing,
 }: {
   onStartTrial: () => void;
+  onRestore: () => void;
   shimmerPosition: Animated.Value;
+  monthlyPackage: PurchasesPackage | null;
+  isPurchasing: boolean;
 }) {
+  // Extract price from package or use fallback
+  const priceString = monthlyPackage?.product?.priceString || "$19.99";
+  // Parse price number from string (e.g., "$19.99" -> "19.99")
+  const priceNumber = priceString.replace(/[^0-9.]/g, "");
+  const priceParts = priceNumber.split(".");
+  const priceWhole = priceParts[0] || "19";
+
   return (
     <View style={styles.priceCardContent}>
       {/* Pro Badge */}
@@ -333,57 +449,70 @@ function PriceCardContent({
       {/* Price */}
       <View style={styles.priceRow}>
         <Text style={styles.priceCurrency}>$</Text>
-        <Text style={styles.priceAmount}>20</Text>
+        <Text style={styles.priceAmount}>{priceWhole}</Text>
         <Text style={styles.pricePeriod}>/ month</Text>
       </View>
 
       {/* Subtext */}
       <Text style={styles.priceSubtext}>
-        Cancel anytime.
+        Cancel anytime. Billed monthly.
       </Text>
 
       {/* CTA Button with Shimmer */}
       <Pressable
         onPress={onStartTrial}
+        disabled={isPurchasing}
         style={({ pressed }) => [
           styles.ctaButton,
           pressed && styles.ctaButtonPressed,
+          isPurchasing && styles.ctaButtonDisabled,
         ]}
       >
         {/* Shimmer overlay */}
-        <Animated.View
-          style={[
-            styles.shimmerOverlay,
-            {
-              transform: [
-                {
-                  translateX: shimmerPosition.interpolate({
-                    inputRange: [-1, 1],
-                    outputRange: [-SCREEN_WIDTH, SCREEN_WIDTH],
-                  }),
-                },
-              ],
-            },
-          ]}
-        >
-          <LinearGradient
-            colors={[
-              "transparent",
-              "rgba(255, 255, 255, 0.3)",
-              "transparent",
+        {!isPurchasing && (
+          <Animated.View
+            style={[
+              styles.shimmerOverlay,
+              {
+                transform: [
+                  {
+                    translateX: shimmerPosition.interpolate({
+                      inputRange: [-1, 1],
+                      outputRange: [-SCREEN_WIDTH, SCREEN_WIDTH],
+                    }),
+                  },
+                ],
+              },
             ]}
-            start={{ x: 0, y: 0.5 }}
-            end={{ x: 1, y: 0.5 }}
-            style={styles.shimmerGradient}
-          />
-        </Animated.View>
-        <Text style={styles.ctaButtonText}>Start 7-Day Free Trial</Text>
+          >
+            <LinearGradient
+              colors={[
+                "transparent",
+                "rgba(255, 255, 255, 0.3)",
+                "transparent",
+              ]}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={styles.shimmerGradient}
+            />
+          </Animated.View>
+        )}
+        {isPurchasing ? (
+          <ActivityIndicator color="#000000" />
+        ) : (
+          <Text style={styles.ctaButtonText}>Start 7-Day Free Trial</Text>
+        )}
       </Pressable>
 
       {/* Terms */}
       <Text style={styles.termsText}>
         No charge until trial ends
       </Text>
+
+      {/* Restore Purchases */}
+      <Pressable onPress={onRestore} style={styles.restoreButton}>
+        <Text style={styles.restoreText}>Restore Purchases</Text>
+      </Pressable>
     </View>
   );
 }
@@ -634,6 +763,9 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.98 }],
     opacity: 0.9,
   },
+  ctaButtonDisabled: {
+    opacity: 0.7,
+  },
   ctaButtonText: {
     fontSize: 17,
     fontWeight: "700",
@@ -659,5 +791,17 @@ const styles = StyleSheet.create({
     fontWeight: "400",
     color: MIDNIGHT.textMuted,
     marginTop: 12,
+  },
+
+  // Restore Purchases
+  restoreButton: {
+    marginTop: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  restoreText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: MIDNIGHT.textMuted,
   },
 });

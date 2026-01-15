@@ -133,18 +133,27 @@ serve(async (req) => {
     );
 
     // Update invoice with Stripe info
-    await supabase
+    const { data: updatedInvoice } = await supabase
       .from("invoices")
       .update({
         stripe_payment_intent_id: paymentIntent.id,
         stripe_hosted_invoice_url: paymentLink.url,
       })
-      .eq("id", invoice_id);
+      .eq("id", invoice_id)
+      .select("tracking_id")
+      .single();
+
+    // Generate tracking URL for read receipts
+    // This URL logs the view before redirecting to Stripe
+    const trackingUrl = updatedInvoice?.tracking_id
+      ? `${SUPABASE_URL}/functions/v1/track-invoice-view?id=${updatedInvoice.tracking_id}`
+      : paymentLink.url;
 
     return new Response(
       JSON.stringify({
         payment_intent_id: paymentIntent.id,
-        payment_link_url: paymentLink.url,
+        payment_link_url: trackingUrl, // Use tracking URL for read receipts
+        direct_stripe_url: paymentLink.url, // Original Stripe URL if needed
         client_secret: paymentIntent.client_secret,
       }),
       {

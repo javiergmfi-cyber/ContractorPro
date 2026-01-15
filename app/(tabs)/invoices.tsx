@@ -12,16 +12,54 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Plus, FileText, Mic } from "lucide-react-native";
+import { Plus, FileText, Mic, Sparkles, ChevronRight } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useInvoiceStore } from "@/store/useInvoiceStore";
+import { useProfileStore } from "@/store/useProfileStore";
 import { useTheme } from "@/lib/theme";
 import { Invoice } from "@/types";
 import { InvoiceCard } from "@/components/InvoiceCard";
 import { RecordingOverlay } from "@/components/RecordingOverlay";
+import { SkeletonCard } from "@/components/SkeletonCard";
 import { startRecording, stopRecording } from "@/services/audio";
 import { processVoiceToInvoice } from "@/services/ai";
+
+// Trade-specific line item templates for the "magic draft"
+const TRADE_TEMPLATES: Record<string, { description: string; amount: number }[]> = {
+  plumber: [
+    { description: "Service Call", amount: 15000 },
+    { description: "Labor (per hour)", amount: 8500 },
+  ],
+  electrician: [
+    { description: "Diagnostic Fee", amount: 7500 },
+    { description: "Labor (per hour)", amount: 9500 },
+  ],
+  painter: [
+    { description: "Room Painting", amount: 35000 },
+    { description: "Materials", amount: 5000 },
+  ],
+  handyman: [
+    { description: "Service Call", amount: 7500 },
+    { description: "Hourly Rate", amount: 6500 },
+  ],
+  hvac: [
+    { description: "System Inspection", amount: 12500 },
+    { description: "Labor (per hour)", amount: 9500 },
+  ],
+  general: [
+    { description: "Project Consultation", amount: 25000 },
+    { description: "Labor (per hour)", amount: 7500 },
+  ],
+  carpenter: [
+    { description: "Custom Woodwork", amount: 45000 },
+    { description: "Materials", amount: 15000 },
+  ],
+  other: [
+    { description: "Service Fee", amount: 10000 },
+    { description: "Labor", amount: 7500 },
+  ],
+};
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const HEADER_MAX_HEIGHT = 120;
@@ -42,6 +80,7 @@ export default function InvoicesScreen() {
   const router = useRouter();
   const { colors, isDark, typography, radius } = useTheme();
   const { invoices, isLoading, fetchInvoices, updateInvoice, setPendingInvoice } = useInvoiceStore();
+  const { profile } = useProfileStore();
 
   const [activeFilter, setActiveFilter] = useState<FilterType>("all");
   const [refreshing, setRefreshing] = useState(false);
@@ -222,30 +261,102 @@ export default function InvoicesScreen() {
     />
   );
 
-  // Empty State Component
+  // Get trade template for magic draft
+  const tradeTemplate = TRADE_TEMPLATES[profile?.trade || "other"] || TRADE_TEMPLATES.other;
+  const draftTotal = tradeTemplate.reduce((sum, item) => sum + item.amount, 0);
+
+  // Format currency helper
+  const formatCurrency = (cents: number) => {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 0,
+    }).format(cents / 100);
+  };
+
+  // Handle magic draft tap - navigate to create with pre-filled items
+  const handleMagicDraftTap = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Set pending invoice with trade template
+    setPendingInvoice({
+      clientName: "",
+      items: tradeTemplate.map((item) => ({
+        description: item.description,
+        price: item.amount / 100,
+        quantity: 1,
+      })),
+      detectedLanguage: "en",
+    });
+    router.push("/invoice/preview");
+  };
+
+  // Empty State Component with Magic Draft
   const EmptyState = () => (
     <View style={styles.emptyState}>
-      {/* Illustration placeholder - subtle icon */}
-      <View style={[styles.emptyIllustration, { backgroundColor: colors.backgroundSecondary }]}>
-        <FileText size={48} color={colors.textTertiary} strokeWidth={1.5} />
-      </View>
-
+      {/* Title */}
       <Text style={[styles.emptyTitle, { color: colors.text }]}>
-        No Invoices
+        Let's Get You Paid
       </Text>
       <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
-        Tap + to get paid
+        Send your first invoice in 30 seconds
       </Text>
 
+      {/* Magic Draft Card - Pre-filled invoice based on trade */}
       <Pressable
-        onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          router.push("/invoice/create");
-        }}
-        style={[styles.emptyButton, { backgroundColor: colors.primary }]}
+        onPress={handleMagicDraftTap}
+        style={({ pressed }) => [
+          styles.magicDraftCard,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.primary + "30",
+            transform: [{ scale: pressed ? 0.98 : 1 }],
+          },
+        ]}
       >
-        <Plus size={20} color="#FFFFFF" strokeWidth={2.5} />
-        <Text style={styles.emptyButtonText}>Create Invoice</Text>
+        {/* Sparkle badge */}
+        <View style={[styles.magicBadge, { backgroundColor: colors.primary + "15" }]}>
+          <Sparkles size={12} color={colors.primary} strokeWidth={2.5} />
+          <Text style={[styles.magicBadgeText, { color: colors.primary }]}>
+            Draft #1
+          </Text>
+        </View>
+
+        {/* Draft content */}
+        <View style={styles.magicDraftContent}>
+          <View style={styles.magicDraftHeader}>
+            <Text style={[styles.magicDraftLabel, { color: colors.textTertiary }]}>
+              Ready to customize
+            </Text>
+            <ChevronRight size={18} color={colors.textTertiary} />
+          </View>
+
+          {/* Line items preview */}
+          {tradeTemplate.map((item, index) => (
+            <View key={index} style={styles.magicDraftItem}>
+              <Text style={[styles.magicDraftItemDesc, { color: colors.text }]}>
+                {item.description}
+              </Text>
+              <Text style={[styles.magicDraftItemPrice, { color: colors.textSecondary }]}>
+                {formatCurrency(item.amount)}
+              </Text>
+            </View>
+          ))}
+
+          {/* Total */}
+          <View style={[styles.magicDraftTotal, { borderTopColor: colors.border }]}>
+            <Text style={[styles.magicDraftTotalLabel, { color: colors.text }]}>
+              Total
+            </Text>
+            <Text style={[styles.magicDraftTotalAmount, { color: colors.primary }]}>
+              {formatCurrency(draftTotal)}
+            </Text>
+          </View>
+        </View>
+
+        {/* CTA hint */}
+        <Text style={[styles.magicDraftHint, { color: colors.primary }]}>
+          Tap to customize and send
+        </Text>
       </Pressable>
 
       {/* Divider */}
@@ -255,31 +366,52 @@ export default function InvoicesScreen() {
         <View style={[styles.emptyDividerLine, { backgroundColor: colors.border }]} />
       </View>
 
-      {/* Speak to Create Button */}
-      <Pressable
-        onPressIn={handleStartVoiceRecording}
-        onPressOut={handleStopVoiceRecording}
-        style={({ pressed }) => [
-          styles.speakButton,
-          {
-            backgroundColor: colors.backgroundSecondary,
-            borderColor: colors.border,
-          },
-          pressed && { backgroundColor: colors.backgroundTertiary },
-        ]}
-      >
-        <View style={[styles.speakButtonIcon, { backgroundColor: colors.primary + "15" }]}>
-          <Mic size={20} color={colors.primary} strokeWidth={2} />
-        </View>
-        <View style={styles.speakButtonTextContainer}>
-          <Text style={[styles.speakButtonTitle, { color: colors.text }]}>
-            Speak to Create
+      {/* Alternative actions */}
+      <View style={styles.altActionsRow}>
+        {/* Speak to Create Button */}
+        <Pressable
+          onPressIn={handleStartVoiceRecording}
+          onPressOut={handleStopVoiceRecording}
+          style={({ pressed }) => [
+            styles.altActionButton,
+            {
+              backgroundColor: colors.backgroundSecondary,
+              borderColor: colors.border,
+            },
+            pressed && { backgroundColor: colors.backgroundTertiary },
+          ]}
+        >
+          <View style={[styles.altActionIcon, { backgroundColor: colors.primary + "15" }]}>
+            <Mic size={20} color={colors.primary} strokeWidth={2} />
+          </View>
+          <Text style={[styles.altActionText, { color: colors.text }]}>
+            Voice
           </Text>
-          <Text style={[styles.speakButtonSubtitle, { color: colors.textTertiary }]}>
-            Hold and describe your work
+        </Pressable>
+
+        {/* Manual Create Button */}
+        <Pressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            router.push("/invoice/create");
+          }}
+          style={({ pressed }) => [
+            styles.altActionButton,
+            {
+              backgroundColor: colors.backgroundSecondary,
+              borderColor: colors.border,
+            },
+            pressed && { backgroundColor: colors.backgroundTertiary },
+          ]}
+        >
+          <View style={[styles.altActionIcon, { backgroundColor: colors.systemBlue + "15" }]}>
+            <Plus size={20} color={colors.systemBlue} strokeWidth={2} />
+          </View>
+          <Text style={[styles.altActionText, { color: colors.text }]}>
+            Manual
           </Text>
-        </View>
-      </Pressable>
+        </Pressable>
+      </View>
     </View>
   );
 
@@ -350,28 +482,34 @@ export default function InvoicesScreen() {
         </View>
 
         {/* ═══════════════════════════════════════════════════════════
-            INVOICE LIST
+            INVOICE LIST (with Skeleton Loading)
         ═══════════════════════════════════════════════════════════ */}
-        <FlatList
-          data={sortedInvoices}
-          keyExtractor={(item) => item.id}
-          renderItem={renderInvoiceItem}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          onScroll={Animated.event(
-            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-            { useNativeDriver: false }
-          )}
-          scrollEventThrottle={16}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={colors.primary}
-            />
-          }
-          ListEmptyComponent={EmptyState}
-        />
+        {isLoading && invoices.length === 0 ? (
+          <View style={styles.listContent}>
+            <SkeletonCard count={4} />
+          </View>
+        ) : (
+          <FlatList
+            data={sortedInvoices}
+            keyExtractor={(item) => item.id}
+            renderItem={renderInvoiceItem}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            onScroll={Animated.event(
+              [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+              { useNativeDriver: false }
+            )}
+            scrollEventThrottle={16}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={colors.primary}
+              />
+            }
+            ListEmptyComponent={EmptyState}
+          />
+        )}
 
         {/* ═══════════════════════════════════════════════════════════
             FLOATING ACTION BUTTON
@@ -457,54 +595,110 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
   },
 
-  // Empty State
+  // Empty State with Magic Draft
   emptyState: {
     flex: 1,
     alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 80,
-    paddingHorizontal: 40,
-  },
-  emptyIllustration: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 24,
+    paddingVertical: 40,
+    paddingHorizontal: 24,
   },
   emptyTitle: {
-    fontSize: 22,
-    fontWeight: "700",
+    fontSize: 24,
+    fontWeight: "800",
     letterSpacing: -0.5,
     marginBottom: 8,
+    textAlign: "center",
   },
   emptySubtitle: {
     fontSize: 15,
     fontWeight: "500",
     textAlign: "center",
-    marginBottom: 32,
+    marginBottom: 24,
   },
-  emptyButton: {
+  // Magic Draft Card
+  magicDraftCard: {
+    width: "100%",
+    borderRadius: 20,
+    borderWidth: 2,
+    padding: 20,
+    marginBottom: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  magicBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
+    alignSelf: "flex-start",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 100,
+    marginBottom: 16,
   },
-  emptyButtonText: {
-    color: "#FFFFFF",
-    fontSize: 17,
+  magicBadgeText: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  magicDraftContent: {
+    marginBottom: 16,
+  },
+  magicDraftHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  magicDraftLabel: {
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  magicDraftItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  magicDraftItemDesc: {
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  magicDraftItemPrice: {
+    fontSize: 15,
+    fontWeight: "600",
+    fontVariant: ["tabular-nums"],
+  },
+  magicDraftTotal: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingTop: 12,
+    marginTop: 8,
+    borderTopWidth: 1,
+  },
+  magicDraftTotalLabel: {
+    fontSize: 16,
     fontWeight: "600",
   },
+  magicDraftTotalAmount: {
+    fontSize: 20,
+    fontWeight: "800",
+    fontVariant: ["tabular-nums"],
+  },
+  magicDraftHint: {
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  // Divider
   emptyDividerContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 24,
     marginBottom: 20,
     width: "100%",
-    paddingHorizontal: 20,
   },
   emptyDividerLine: {
     flex: 1,
@@ -515,37 +709,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
   },
-  speakButton: {
+  // Alt Actions Row
+  altActionsRow: {
     flexDirection: "row",
+    gap: 12,
+    width: "100%",
+  },
+  altActionButton: {
+    flex: 1,
     alignItems: "center",
-    paddingHorizontal: 20,
     paddingVertical: 16,
     borderRadius: 16,
     borderWidth: 1,
-    width: "100%",
-    maxWidth: 280,
   },
-  speakButtonIcon: {
+  altActionIcon: {
     width: 44,
     height: 44,
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 14,
+    marginBottom: 8,
   },
-  speakButtonTextContainer: {
-    flex: 1,
-  },
-  speakButtonTitle: {
-    fontSize: 16,
+  altActionText: {
+    fontSize: 14,
     fontWeight: "600",
-    letterSpacing: -0.3,
-    marginBottom: 2,
-  },
-  speakButtonSubtitle: {
-    fontSize: 13,
-    fontWeight: "400",
-    letterSpacing: -0.1,
   },
 
   // FAB
