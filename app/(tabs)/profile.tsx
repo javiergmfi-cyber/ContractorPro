@@ -39,6 +39,8 @@ import {
   HardHat,
   Droplet,
   Grid3x3,
+  Eye,
+  Banknote,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
@@ -568,6 +570,82 @@ export default function Profile() {
                 />
               </>
             )}
+
+            {/* Read Receipts Row */}
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <Pressable
+              onPress={() => !isPro && router.push("/paywall?trigger=read_receipts")}
+              style={[styles.settingRow, { paddingVertical: 16 }]}
+            >
+              <View style={styles.iconWithBadge}>
+                {!isPro && (
+                  <View style={[styles.proPillSmall, styles.proPillAbsolute, { backgroundColor: colors.systemOrange + "15" }]}>
+                    <Crown size={10} color={colors.systemOrange} />
+                    <Text style={[styles.proPillText, { color: colors.systemOrange }]}>PRO</Text>
+                  </View>
+                )}
+                <View style={[styles.settingIcon, { backgroundColor: "#FF9500" + "15" }]}>
+                  <Eye size={20} color="#FF9500" />
+                </View>
+              </View>
+              <View style={styles.settingContent}>
+                <Text style={[typography.body, { color: colors.text, fontWeight: "600" }]}>
+                  Read Receipts
+                </Text>
+                <Text style={[typography.caption1, { color: colors.textTertiary, marginTop: 4, lineHeight: 18 }]}>
+                  {isPro
+                    ? "See when clients view your invoices"
+                    : "Know the moment your client opens your invoice. No more guessing."}
+                </Text>
+              </View>
+              {isPro ? (
+                <Switch
+                  value={true}
+                  trackColor={{ false: colors.border, true: "#FF9500" }}
+                  thumbColor="#FFFFFF"
+                />
+              ) : (
+                <ChevronRight size={20} color={colors.textTertiary} />
+              )}
+            </Pressable>
+
+            {/* Instant Payouts Row */}
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <Pressable
+              onPress={() => !isPro && router.push("/paywall?trigger=instant_payouts")}
+              style={[styles.settingRow, { paddingVertical: 16 }]}
+            >
+              <View style={styles.iconWithBadge}>
+                {!isPro && (
+                  <View style={[styles.proPillSmall, styles.proPillAbsolute, { backgroundColor: colors.systemOrange + "15" }]}>
+                    <Crown size={10} color={colors.systemOrange} />
+                    <Text style={[styles.proPillText, { color: colors.systemOrange }]}>PRO</Text>
+                  </View>
+                )}
+                <View style={[styles.settingIcon, { backgroundColor: "#34C759" + "15" }]}>
+                  <Banknote size={20} color="#34C759" />
+                </View>
+              </View>
+              <View style={styles.settingContent}>
+                <Text style={[typography.body, { color: colors.text, fontWeight: "600" }]}>
+                  Instant Payouts
+                </Text>
+                <Text style={[typography.caption1, { color: colors.textTertiary, marginTop: 4, lineHeight: 18 }]}>
+                  {isPro
+                    ? "Get paid in 24 hours"
+                    : "Get your money in 24 hours, not 3 days. Stop waiting."}
+                </Text>
+              </View>
+              {isPro ? (
+                <View style={[styles.badge, { backgroundColor: "#34C759" + "20" }]}>
+                  <Text style={[typography.caption2, { color: "#34C759", fontWeight: "600" }]}>
+                    Active
+                  </Text>
+                </View>
+              ) : (
+                <ChevronRight size={20} color={colors.textTertiary} />
+              )}
+            </Pressable>
           </View>
         </Animated.View>
 
