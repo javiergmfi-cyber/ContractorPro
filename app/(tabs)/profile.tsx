@@ -584,8 +584,8 @@ export default function Profile() {
                     <Text style={[styles.proPillText, { color: colors.systemOrange }]}>PRO</Text>
                   </View>
                 )}
-                <View style={[styles.settingIcon, { backgroundColor: "#FF9500" + "15" }]}>
-                  <Eye size={20} color="#FF9500" />
+                <View style={[styles.settingIcon, { backgroundColor: colors.primary + "15" }]}>
+                  <Eye size={20} color={colors.primary} />
                 </View>
               </View>
               <View style={styles.settingContent}>
@@ -601,7 +601,7 @@ export default function Profile() {
               {isPro ? (
                 <Switch
                   value={true}
-                  trackColor={{ false: colors.border, true: "#FF9500" }}
+                  trackColor={{ false: colors.border, true: colors.primary }}
                   thumbColor="#FFFFFF"
                 />
               ) : (
