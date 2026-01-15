@@ -474,7 +474,7 @@ export default function Profile() {
           ]}
         >
           <View style={styles.sectionTitleRow}>
-            <Text style={styles.sectionTitle}>Auto-Reminders</Text>
+            <Text style={styles.sectionTitle}>Payment Collection</Text>
             {!isPro && (
               <View style={[styles.proBadge, { backgroundColor: colors.systemOrange + "20" }]}>
                 <Crown size={12} color={colors.systemOrange} />
@@ -487,8 +487,8 @@ export default function Profile() {
           <View style={styles.settingsCard}>
             <SettingRow
               icon={<Bell size={20} color={isPro ? colors.primary : colors.textTertiary} />}
-              title="Enable Auto-Reminders"
-              subtitle={isPro ? "Automatically remind clients about overdue invoices" : "Get paid 2x faster. We chase payments so you don't have to."}
+              title="Auto-Chase Unpaid Invoices"
+              subtitle={isPro ? "Automatically follow up on overdue invoices until you get paid" : "Get paid 2x faster. We chase payments so you don't have to."}
               rightElement={
                 isPro ? (
                   <Switch
