@@ -483,38 +483,45 @@ export default function Profile() {
                 styles.proUpsellCard,
                 {
                   backgroundColor: colors.card,
-                  borderRadius: radius.lg,
+                  borderRadius: radius.xl,
+                  borderWidth: 1,
+                  borderColor: colors.border,
                   transform: [{ scale: pressed ? 0.98 : 1 }],
                 },
               ]}
             >
-              {/* Pro Badge */}
-              <View style={[styles.proUpsellBadge, { backgroundColor: colors.systemOrange + "15" }]}>
-                <Crown size={14} color={colors.systemOrange} />
-                <Text style={[typography.caption2, { color: colors.systemOrange, fontWeight: "700", marginLeft: 4 }]}>
-                  PRO FEATURE
+              {/* Decorative gradient header */}
+              <View style={[styles.proUpsellHeader, { backgroundColor: colors.primary + "08" }]}>
+                <View style={[styles.proUpsellIconLarge, { backgroundColor: colors.primary + "15" }]}>
+                  <Bell size={32} color={colors.primary} strokeWidth={1.5} />
+                </View>
+                <View style={[styles.proUpsellBadge, { backgroundColor: colors.systemOrange + "18" }]}>
+                  <Crown size={12} color={colors.systemOrange} />
+                  <Text style={[typography.caption2, { color: colors.systemOrange, fontWeight: "700", marginLeft: 4 }]}>
+                    PRO
+                  </Text>
+                </View>
+              </View>
+
+              {/* Content */}
+              <View style={styles.proUpsellContent}>
+                <Text style={[styles.proUpsellTitle, { color: colors.text }]}>
+                  Auto-Chase Unpaid Invoices
                 </Text>
-              </View>
+                <Text style={[styles.proUpsellDescription, { color: colors.textSecondary }]}>
+                  We text & email your clients until they pay. You do nothing.
+                </Text>
 
-              {/* Icon */}
-              <View style={[styles.proUpsellIcon, { backgroundColor: colors.primary + "12" }]}>
-                <Bell size={28} color={colors.primary} strokeWidth={1.5} />
-              </View>
-
-              {/* Title */}
-              <Text style={[styles.proUpsellTitle, { color: colors.text }]}>
-                Auto-Chase Unpaid Invoices
-              </Text>
-
-              {/* Description */}
-              <Text style={[styles.proUpsellDescription, { color: colors.textSecondary }]}>
-                We text & email your clients until they pay.{"\n"}You do nothing.
-              </Text>
-
-              {/* CTA Button */}
-              <View style={[styles.proUpsellButton, { backgroundColor: colors.primary }]}>
-                <Lock size={16} color="#FFFFFF" />
-                <Text style={styles.proUpsellButtonText}>Unlock This Feature</Text>
+                {/* CTA Button */}
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.proUpsellButton,
+                    { backgroundColor: colors.primary, opacity: pressed ? 0.9 : 1 },
+                  ]}
+                >
+                  <Text style={styles.proUpsellButtonText}>Unlock Feature</Text>
+                  <ChevronRight size={18} color="#FFFFFF" />
+                </Pressable>
               </View>
             </Pressable>
           ) : (
@@ -1132,57 +1139,62 @@ const createStyles = (colors: any, isDark: boolean, spacing: any, radius: any, t
     },
     // Pro Upsell Card Styles
     proUpsellCard: {
-      padding: spacing.lg,
-      alignItems: "center",
+      overflow: "hidden",
       shadowColor: "#000",
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.08,
-      shadowRadius: 12,
-      elevation: 4,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.06,
+      shadowRadius: 8,
+      elevation: 3,
+    },
+    proUpsellHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.md,
+    },
+    proUpsellIconLarge: {
+      width: 52,
+      height: 52,
+      borderRadius: 14,
+      alignItems: "center",
+      justifyContent: "center",
     },
     proUpsellBadge: {
       flexDirection: "row",
       alignItems: "center",
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-      borderRadius: 20,
-      marginBottom: spacing.md,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 12,
     },
-    proUpsellIcon: {
-      width: 64,
-      height: 64,
-      borderRadius: 20,
-      alignItems: "center",
-      justifyContent: "center",
-      marginBottom: spacing.md,
+    proUpsellContent: {
+      padding: spacing.md,
+      paddingTop: spacing.xs,
     },
     proUpsellTitle: {
-      fontSize: 20,
+      fontSize: 18,
       fontWeight: "700",
-      letterSpacing: -0.4,
-      textAlign: "center",
-      marginBottom: spacing.xs,
+      letterSpacing: -0.3,
+      marginBottom: 4,
     },
     proUpsellDescription: {
-      fontSize: 15,
+      fontSize: 14,
       fontWeight: "500",
-      textAlign: "center",
-      lineHeight: 22,
-      marginBottom: spacing.lg,
+      lineHeight: 20,
+      marginBottom: spacing.md,
     },
     proUpsellButton: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
-      paddingVertical: 14,
-      paddingHorizontal: 32,
-      borderRadius: 14,
-      gap: 8,
-      width: "100%",
+      paddingVertical: 12,
+      paddingHorizontal: 20,
+      borderRadius: 12,
+      gap: 4,
     },
     proUpsellButtonText: {
       color: "#FFFFFF",
-      fontSize: 17,
+      fontSize: 15,
       fontWeight: "600",
     },
   });
