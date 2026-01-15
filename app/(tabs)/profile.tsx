@@ -31,6 +31,13 @@ import {
   RefreshCw,
   Lock,
   Crown,
+  Wrench,
+  Zap,
+  Paintbrush,
+  Hammer,
+  Thermometer,
+  HardHat,
+  Droplet,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
@@ -41,6 +48,18 @@ import { useOfflineStore } from "@/store/useOfflineStore";
 import { useSubscriptionStore } from "@/store/useSubscriptionStore";
 import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/Button";
+
+// Trade options
+const TRADES = [
+  { id: "plumber", name: "Plumber", icon: Droplet, color: "#007AFF" },
+  { id: "electrician", name: "Electrician", icon: Zap, color: "#FF9500" },
+  { id: "painter", name: "Painter", icon: Paintbrush, color: "#AF52DE" },
+  { id: "handyman", name: "Handyman", icon: Wrench, color: "#34C759" },
+  { id: "hvac", name: "HVAC", icon: Thermometer, color: "#FF3B30" },
+  { id: "general", name: "General Contractor", icon: HardHat, color: "#8E8E93" },
+  { id: "carpenter", name: "Carpenter", icon: Hammer, color: "#A2845E" },
+  { id: "other", name: "Other", icon: Wrench, color: "#636366" },
+];
 
 /**
  * Profile Screen
@@ -74,6 +93,7 @@ export default function Profile() {
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(false);
   const [templateText, setTemplateText] = useState("");
+  const [showTradeModal, setShowTradeModal] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
@@ -129,6 +149,20 @@ export default function Profile() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     Alert.alert("Saved", "Your profile has been updated.");
   };
+
+  const handleTradeSelect = async (tradeId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      await updateProfile({ trade: tradeId });
+      setShowTradeModal(false);
+    } catch (error) {
+      console.error("Error saving trade:", error);
+      Alert.alert("Error", "Failed to save trade selection");
+    }
+  };
+
+  const currentTrade = TRADES.find((t) => t.id === profile?.trade);
+  const TradeIcon = currentTrade?.icon || Wrench;
 
   const handleToggleReminders = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -362,6 +396,39 @@ export default function Profile() {
             placeholder="0"
             keyboardType="decimal-pad"
           />
+
+          {/* Trade Selection */}
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Your Trade</Text>
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setShowTradeModal(true);
+              }}
+              style={[
+                styles.tradeSelectRow,
+                {
+                  backgroundColor: colors.backgroundSecondary,
+                  borderRadius: radius.md,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.tradeIconSmall,
+                  { backgroundColor: (currentTrade?.color || colors.primary) + "15" },
+                ]}
+              >
+                <TradeIcon size={18} color={currentTrade?.color || colors.primary} />
+              </View>
+              <Text style={[styles.tradeSelectText, { color: colors.text }]}>
+                {currentTrade?.name || "Select your trade"}
+              </Text>
+              <ChevronRight size={18} color={colors.textTertiary} />
+            </Pressable>
+          </View>
         </Animated.View>
 
         {/* Stripe Connect Section */}
@@ -705,6 +772,64 @@ export default function Profile() {
           </View>
         </SafeAreaView>
       </Modal>
+
+      {/* Trade Selection Modal */}
+      <Modal
+        visible={showTradeModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowTradeModal(false)}
+      >
+        <SafeAreaView style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+          <View style={styles.modalHeader}>
+            <Pressable onPress={() => setShowTradeModal(false)}>
+              <Text style={[typography.body, { color: colors.textSecondary }]}>Cancel</Text>
+            </Pressable>
+            <Text style={[typography.headline, { color: colors.text }]}>Your Trade</Text>
+            <View style={{ width: 50 }} />
+          </View>
+
+          <View style={styles.modalContent}>
+            <Text style={[typography.footnote, { color: colors.textSecondary, marginBottom: spacing.md }]}>
+              Select your profession to personalize your experience
+            </Text>
+
+            {TRADES.map((trade) => {
+              const TradeIconComponent = trade.icon;
+              const isSelected = profile?.trade === trade.id;
+
+              return (
+                <Pressable
+                  key={trade.id}
+                  style={[
+                    styles.tradeOption,
+                    {
+                      backgroundColor: isSelected ? trade.color + "15" : colors.backgroundSecondary,
+                      borderRadius: radius.md,
+                      borderWidth: isSelected ? 2 : 1,
+                      borderColor: isSelected ? trade.color : colors.border,
+                    },
+                  ]}
+                  onPress={() => handleTradeSelect(trade.id)}
+                >
+                  <View style={[styles.tradeOptionIcon, { backgroundColor: trade.color + "20" }]}>
+                    <TradeIconComponent size={22} color={trade.color} />
+                  </View>
+                  <Text
+                    style={[
+                      typography.body,
+                      { color: isSelected ? trade.color : colors.text, flex: 1 },
+                    ]}
+                  >
+                    {trade.name}
+                  </Text>
+                  {isSelected && <Check size={20} color={trade.color} />}
+                </Pressable>
+              );
+            })}
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -943,5 +1068,38 @@ const createStyles = (colors: any, isDark: boolean, spacing: any, radius: any, t
     previewCard: {
       padding: spacing.md,
       marginTop: spacing.md,
+    },
+    // Trade Selection Styles
+    tradeSelectRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.md,
+    },
+    tradeIconSmall: {
+      width: 32,
+      height: 32,
+      borderRadius: 8,
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: spacing.sm,
+    },
+    tradeSelectText: {
+      flex: 1,
+      ...typography.body,
+    },
+    tradeOption: {
+      flexDirection: "row",
+      alignItems: "center",
+      padding: spacing.md,
+      marginBottom: spacing.sm,
+    },
+    tradeOptionIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: 10,
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: spacing.sm,
     },
   });
