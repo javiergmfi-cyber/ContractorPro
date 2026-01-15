@@ -479,7 +479,7 @@ export default function Profile() {
           <View style={styles.settingsCard}>
             <Pressable
               onPress={() => !isPro && router.push("/paywall?trigger=reminder_fatigue")}
-              style={styles.settingRow}
+              style={[styles.settingRow, { paddingVertical: 16 }]}
             >
               <View style={[styles.settingIcon, { backgroundColor: colors.primary + "15" }]}>
                 <Bell size={20} color={colors.primary} />
@@ -496,8 +496,10 @@ export default function Profile() {
                     </View>
                   )}
                 </View>
-                <Text style={[typography.caption1, { color: colors.textTertiary, marginTop: 2 }]}>
-                  {isPro ? "We text & email clients who haven't paid" : "We chase payments so you don't have to"}
+                <Text style={[typography.caption1, { color: colors.textTertiary, marginTop: 4, lineHeight: 18 }]}>
+                  {isPro
+                    ? "We text & email clients who haven't paid"
+                    : "We text & email your clients automatically until they pay. You do nothing."}
                 </Text>
               </View>
               {isPro ? (
