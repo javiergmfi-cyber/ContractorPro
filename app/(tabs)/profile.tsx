@@ -1009,9 +1009,8 @@ const createStyles = (colors: any, isDark: boolean, spacing: any, radius: any, t
     },
     proPillAbsolute: {
       position: "absolute",
-      top: -6,
-      left: 0,
-      right: 0,
+      top: -8,
+      left: -8,
       zIndex: 1,
     },
     proPillText: {
@@ -1020,9 +1019,6 @@ const createStyles = (colors: any, isDark: boolean, spacing: any, radius: any, t
     },
     iconWithBadge: {
       position: "relative",
-      alignItems: "center",
-      marginRight: spacing.sm,
-      paddingTop: 10,
     },
     badge: {
       paddingHorizontal: 8,
