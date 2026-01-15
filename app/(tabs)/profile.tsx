@@ -342,32 +342,51 @@ export default function Profile() {
           <Text style={styles.subtitle}>Business information</Text>
         </Animated.View>
 
-        {/* Logo Section */}
+        {/* Custom Branding Section */}
         <Animated.View
           style={[
-            styles.logoSection,
+            styles.section,
             { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
           ]}
         >
-          <Pressable onPress={pickImage} style={styles.logoContainer}>
-            {profile?.logo_url ? (
-              <Image source={{ uri: profile.logo_url }} style={styles.logoImage} />
-            ) : (
-              <View style={styles.logoPlaceholder}>
-                <Building2 size={32} color={colors.textTertiary} />
+          <Text style={[styles.sectionTitle, { marginBottom: spacing.sm }]}>Branding</Text>
+          <View style={styles.settingsCard}>
+            <Pressable
+              onPress={pickImage}
+              style={[styles.settingRow, { paddingVertical: 16 }]}
+            >
+              <View style={styles.iconWithBadge}>
+                {!isPro && (
+                  <View style={[styles.proPillSmall, styles.proPillAbsolute, { backgroundColor: colors.systemOrange + "15" }]}>
+                    <Crown size={10} color={colors.systemOrange} />
+                    <Text style={[styles.proPillText, { color: colors.systemOrange }]}>PRO</Text>
+                  </View>
+                )}
+                {profile?.logo_url ? (
+                  <Image source={{ uri: profile.logo_url }} style={styles.brandingLogoSmall} />
+                ) : (
+                  <View style={[styles.settingIcon, { backgroundColor: "#AF52DE" + "15" }]}>
+                    <Building2 size={20} color="#AF52DE" />
+                  </View>
+                )}
               </View>
-            )}
-            <View style={[styles.cameraButton, { backgroundColor: isPro ? colors.primary : colors.systemOrange }]}>
+              <View style={styles.settingContent}>
+                <Text style={[typography.body, { color: colors.text, fontWeight: "600" }]}>
+                  Custom Logo
+                </Text>
+                <Text style={[typography.caption1, { color: colors.textTertiary, marginTop: 4, lineHeight: 18 }]}>
+                  {isPro
+                    ? "Tap to upload your business logo"
+                    : "Your logo on every invoice. Look professional, win more jobs."}
+                </Text>
+              </View>
               {isPro ? (
-                <Camera size={16} color="#FFFFFF" />
+                <Camera size={20} color={colors.primary} />
               ) : (
-                <Lock size={14} color="#FFFFFF" />
+                <ChevronRight size={20} color={colors.textTertiary} />
               )}
-            </View>
-          </Pressable>
-          <Text style={styles.logoHint}>
-            {isPro ? "Tap to add logo" : "Pro feature • Tap to upgrade"}
-          </Text>
+            </Pressable>
+          </View>
         </Animated.View>
 
         {/* Business Info Form */}
@@ -1097,6 +1116,12 @@ const createStyles = (colors: any, isDark: boolean, spacing: any, radius: any, t
     },
     iconWithBadge: {
       position: "relative",
+    },
+    brandingLogoSmall: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      marginRight: spacing.sm,
     },
     badge: {
       paddingHorizontal: 8,
