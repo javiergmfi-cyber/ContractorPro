@@ -2,9 +2,18 @@
  * Edge Function: twilio-inbound
  * Handles incoming SMS messages from Twilio (STOP opt-out handling)
  *
- * SMS Compliance:
+ * SMS Compliance (TCPA/FCC compliant):
  * - STOP, STOPALL, UNSUBSCRIBE, CANCEL, END, QUIT → opt out = true
  * - START, YES → opt out = false (re-subscribe)
+ *
+ * IMPORTANT: STOP blocks ALL SMS from ContractorPro to this phone number.
+ * This is the safest approach under TCPA/FCC rules - a consumer opt-out
+ * revokes consent for all robotexts from that sender.
+ *
+ * After opt-out, contractor can still reach customer via:
+ * - Email
+ * - WhatsApp (separate consent)
+ * - Manual phone call
  *
  * Configure in Twilio:
  * 1. Go to Phone Numbers → Your Number → Messaging
@@ -69,7 +78,7 @@ serve(async (req) => {
       return new Response(
         `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Message>You have been unsubscribed. You will no longer receive payment reminders.</Message>
+  <Message>You have been unsubscribed and will no longer receive text messages from this number.</Message>
 </Response>`,
         {
           headers: { "Content-Type": "text/xml" },
