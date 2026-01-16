@@ -143,7 +143,8 @@ serve(async (req) => {
           invoice.currency,
           paymentUrl,
           nextAttempt,
-          isBalanceChase
+          isBalanceChase,
+          invoice.invoice_number
         );
 
         // Send SMS if Twilio configured and phone available
@@ -291,8 +292,14 @@ function getNextAttempt(hoursSinceSent: number, currentChaseCount: number): numb
 
 /**
  * Generate chase message with SMS compliance
- * - First message includes opt-out language
- * - Balance chase has specific wording
+ * Production templates optimized for deliverability and payment conversion
+ *
+ * Rules:
+ * - Under 240 characters
+ * - No ALL CAPS, no emojis
+ * - Include amount + link always
+ * - STOP opt-out on attempt #1
+ * - Use "balance due" not "overdue" until attempt 4-5
  */
 function generateChaseMessage(
   clientName: string,
@@ -300,30 +307,48 @@ function generateChaseMessage(
   currency: string,
   paymentUrl: string,
   attemptNumber: number,
-  isBalanceChase: boolean
+  isBalanceChase: boolean,
+  invoiceNumber?: string
 ): string {
   const amount = formatCurrency(remainingBalance, currency);
-  const firstName = clientName.split(" ")[0]; // Use first name for friendlier tone
+  const firstName = clientName.split(" ")[0];
+  const invNum = invoiceNumber || "";
 
   let message: string;
 
   if (isBalanceChase) {
-    // Balance reminder after deposit paid
+    // Balance reminder after deposit paid - HIGH converting message
     if (attemptNumber === 1) {
-      message = `Hi ${firstName} — thanks for your deposit! Your remaining balance of ${amount} is now due. Pay here: ${paymentUrl}\n\nReply STOP to opt out`;
-    } else if (attemptNumber <= 3) {
-      message = `Hi ${firstName} — reminder: your remaining balance of ${amount} is due. Pay here: ${paymentUrl}`;
+      message = `Thanks ${firstName} — deposit received. The remaining balance of ${amount} is now due. Pay here: ${paymentUrl} Reply STOP to opt out.`;
+    } else if (attemptNumber === 2) {
+      message = `Hi ${firstName} — following up on your remaining balance of ${amount}. Pay here: ${paymentUrl}`;
+    } else if (attemptNumber === 3) {
+      message = `Hi ${firstName} — balance of ${amount} remains unpaid. Please take care of it here: ${paymentUrl}`;
+    } else if (attemptNumber === 4) {
+      message = `Hi ${firstName} — balance of ${amount} is still outstanding. Please pay today: ${paymentUrl}`;
     } else {
-      message = `Hi ${firstName} — final reminder: ${amount} balance is still outstanding. Please pay today: ${paymentUrl}`;
+      message = `Hi ${firstName} — final reminder: ${amount} balance remaining. Please submit payment here: ${paymentUrl}`;
     }
   } else {
     // Standard chase for unpaid invoices
     if (attemptNumber === 1) {
-      message = `Hi ${firstName} — quick reminder your invoice of ${amount} is still due. Pay here: ${paymentUrl}\n\nReply STOP to opt out`;
-    } else if (attemptNumber <= 3) {
-      message = `Hi ${firstName} — your invoice of ${amount} remains unpaid. Please pay at your earliest convenience: ${paymentUrl}`;
+      message = `Hi ${firstName} — quick reminder your invoice balance of ${amount} is still due. Pay here: ${paymentUrl} Reply STOP to opt out.`;
+    } else if (attemptNumber === 2) {
+      message = invNum
+        ? `Hi ${firstName} — following up on invoice ${invNum}. Balance due: ${amount}. Pay here: ${paymentUrl}`
+        : `Hi ${firstName} — following up on your invoice. Balance due: ${amount}. Pay here: ${paymentUrl}`;
+    } else if (attemptNumber === 3) {
+      message = invNum
+        ? `Hi ${firstName} — invoice ${invNum} remains unpaid. Balance due: ${amount}. Please take care of it here: ${paymentUrl}`
+        : `Hi ${firstName} — your invoice remains unpaid. Balance due: ${amount}. Please take care of it here: ${paymentUrl}`;
+    } else if (attemptNumber === 4) {
+      message = invNum
+        ? `Hi ${firstName} — invoice ${invNum} is still outstanding. Balance due: ${amount}. Please pay today: ${paymentUrl}`
+        : `Hi ${firstName} — your invoice is still outstanding. Balance due: ${amount}. Please pay today: ${paymentUrl}`;
     } else {
-      message = `Hi ${firstName} — final reminder: ${amount} is still outstanding. Please pay today: ${paymentUrl}`;
+      message = invNum
+        ? `Hi ${firstName} — final reminder: invoice ${invNum} has a remaining balance of ${amount}. Please submit payment here: ${paymentUrl}`
+        : `Hi ${firstName} — final reminder: ${amount} is still outstanding. Please submit payment here: ${paymentUrl}`;
     }
   }
 

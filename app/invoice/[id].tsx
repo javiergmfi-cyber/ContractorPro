@@ -721,8 +721,8 @@ export default function InvoiceDetail() {
               </View>
               <Text style={[typography.caption1, { color: colors.textSecondary, marginTop: 2 }]}>
                 {autoChaseEnabled
-                  ? "AI will follow up until they pay"
-                  : "Enable automatic payment reminders"}
+                  ? "Sends reminders automatically. Stops once paid."
+                  : "We'll send polite reminders until they pay."}
               </Text>
             </View>
             <Switch

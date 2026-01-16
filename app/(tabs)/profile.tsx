@@ -557,12 +557,12 @@ export default function Profile() {
               </View>
               <View style={styles.settingContent}>
                 <Text style={[typography.body, { color: colors.text, fontWeight: "600" }]}>
-                  Auto-Chase Unpaid Invoices
+                  Auto-Chase Reminders
                 </Text>
                 <Text style={[typography.caption1, { color: colors.textTertiary, marginTop: 4, lineHeight: 18 }]}>
                   {isPro
-                    ? "We text & email clients who haven't paid"
-                    : "We text & email your clients automatically until they pay. You do nothing."}
+                    ? "Polite follow-ups until paid. Stops automatically."
+                    : "Polite follow-ups until paid. You do nothing."}
                 </Text>
               </View>
               {isPro ? (

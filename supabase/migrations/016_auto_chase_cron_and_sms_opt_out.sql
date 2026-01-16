@@ -31,7 +31,8 @@ RETURNS TABLE (
   hours_since_sent NUMERIC,
   chase_count INTEGER,
   status TEXT,
-  deposit_enabled BOOLEAN
+  deposit_enabled BOOLEAN,
+  invoice_number TEXT
 ) AS $$
 BEGIN
   RETURN QUERY
@@ -49,7 +50,8 @@ BEGIN
     EXTRACT(EPOCH FROM (NOW() - i.sent_at)) / 3600 as hours_since_sent,
     COALESCE((SELECT COUNT(*) FROM chase_events ce WHERE ce.invoice_id = i.id), 0)::INTEGER as chase_count,
     i.status,
-    COALESCE(i.deposit_enabled, false) as deposit_enabled
+    COALESCE(i.deposit_enabled, false) as deposit_enabled,
+    i.invoice_number
   FROM invoices i
   WHERE
     i.auto_chase_enabled = true
