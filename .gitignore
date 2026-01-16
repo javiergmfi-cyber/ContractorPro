@@ -40,3 +40,8 @@ yarn-error.*
 /ios
 /android
 .env
+
+# Codebase exports (may contain sensitive data)
+*codebase-export*
+*-export.md
+*-export.txt
