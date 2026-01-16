@@ -31,9 +31,11 @@ import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/Button";
 import { SuccessOverlay } from "@/components/SuccessOverlay";
 import { BlackCardInvoice } from "@/components/BlackCardInvoice";
+import { DepositSelector } from "@/components/DepositSelector";
 import { useInvoiceStore } from "@/store/useInvoiceStore";
 import { useProfileStore } from "@/store/useProfileStore";
 import { formatCurrency, toDollars } from "@/types";
+import { DepositType } from "@/types/database";
 import * as db from "@/services/database";
 
 /**
@@ -62,6 +64,12 @@ export default function InvoicePreview() {
   // Editable fields
   const [clientName, setClientName] = useState(pendingInvoice?.clientName || "");
   const [items, setItems] = useState(pendingInvoice?.items || []);
+
+  // Deposit settings
+  const [depositEnabled, setDepositEnabled] = useState(false);
+  const [depositType, setDepositType] = useState<DepositType | null>(null);
+  const [depositValue, setDepositValue] = useState<number | null>(null);
+  const [depositAmount, setDepositAmount] = useState(0);
 
   if (!pendingInvoice) {
     return (
@@ -93,11 +101,23 @@ export default function InvoicePreview() {
   const taxAmount = Math.round(subtotal * (taxRate / 100));
   const total = subtotal + taxAmount;
 
+  const handleDepositChange = (settings: {
+    depositEnabled: boolean;
+    depositType: DepositType | null;
+    depositValue: number | null;
+    depositAmount: number;
+  }) => {
+    setDepositEnabled(settings.depositEnabled);
+    setDepositType(settings.depositType);
+    setDepositValue(settings.depositValue);
+    setDepositAmount(settings.depositAmount);
+  };
+
   const handleConfirm = async () => {
     setIsSaving(true);
 
     try {
-      // Create invoice in database
+      // Create invoice in database with deposit settings
       const invoiceData = {
         client_name: clientName,
         subtotal,
@@ -106,6 +126,12 @@ export default function InvoicePreview() {
         currency: profile?.default_currency || "USD",
         status: "draft" as const,
         notes: pendingInvoice.notes,
+        // Deposit settings
+        deposit_enabled: depositEnabled,
+        deposit_type: depositType,
+        deposit_value: depositValue,
+        deposit_amount: depositAmount,
+        amount_paid: 0,
       };
 
       const newInvoice = await db.createInvoice(invoiceData);
@@ -610,6 +636,18 @@ export default function InvoicePreview() {
               Looks wrong? Re-record
             </Text>
           </Pressable>
+
+          {/* Deposit Selector */}
+          <View style={{ marginTop: 16, marginBottom: 16 }}>
+            <DepositSelector
+              totalAmount={total}
+              clientName={clientName}
+              depositEnabled={depositEnabled}
+              depositType={depositType}
+              depositValue={depositValue}
+              onDepositChange={handleDepositChange}
+            />
+          </View>
 
           {/* Collection Settings - iOS Settings Group Style */}
           <View style={{ marginTop: 32, marginBottom: 16 }}>

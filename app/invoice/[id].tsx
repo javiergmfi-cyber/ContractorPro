@@ -11,6 +11,7 @@ import {
   Animated,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams, useNavigation } from "expo-router";
@@ -28,6 +29,7 @@ import {
   MoreHorizontal,
   Zap,
   ChevronRight,
+  Crown,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
@@ -63,13 +65,14 @@ export default function InvoiceDetail() {
   const { colors, typography, spacing, radius, shadows, isDark } = useTheme();
   const { invoices, fetchInvoice, updateInvoice } = useInvoiceStore();
   const { profile } = useProfileStore();
-  const { isPro, canUseBadCopAutopilot } = useSubscriptionStore();
+  const { isPro, canUseBadCopAutopilot, canSendInvoice, getRemainingInvoiceSends, setSendsThisMonth } = useSubscriptionStore();
 
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [invoiceItems, setInvoiceItems] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [autoChaseEnabled, setAutoChaseEnabled] = useState(false);
 
   // Scroll animation
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -130,7 +133,18 @@ export default function InvoiceDetail() {
 
   useEffect(() => {
     loadInvoice();
+    // Load send count for free tier limit tracking
+    loadSendCount();
   }, [id]);
+
+  const loadSendCount = async () => {
+    try {
+      const count = await db.getSendsThisMonth();
+      setSendsThisMonth(count);
+    } catch (error) {
+      console.error("Error loading send count:", error);
+    }
+  };
 
   const loadInvoice = async () => {
     setIsLoading(true);
@@ -145,6 +159,7 @@ export default function InvoiceDetail() {
 
       if (inv) {
         setInvoice(inv);
+        setAutoChaseEnabled(inv.auto_chase_enabled || false);
         // Fetch invoice items
         const items = await db.getInvoiceItems(inv.id);
         setInvoiceItems(items || []);
@@ -203,51 +218,76 @@ export default function InvoiceDetail() {
   });
 
   const handleSendInvoice = () => {
+    // Determine message type based on invoice status
+    // "balance" = collecting remaining after deposit (uses same link, different message)
+    // "initial" = first time sending (counts against send limit)
+    const isBalanceCollection = invoice.status === "deposit_paid";
+
+    // Check send limit for free users (only for first-time sends, not resends or balance collection)
+    // Balance collection doesn't count because deposits are PRO-only anyway
+    if (invoice.status === "draft" && !canSendInvoice()) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      router.push("/paywall?trigger=send_limit");
+      return;
+    }
+
+    const actionTitle = isBalanceCollection
+      ? "How would you like to collect the balance?"
+      : "How would you like to send this invoice?";
+
     if (Platform.OS === "ios") {
       ActionSheetIOS.showActionSheetWithOptions(
         {
           options: ["Cancel", "Send via SMS", "Send via WhatsApp", "Send via Email", "Share..."],
           cancelButtonIndex: 0,
-          title: "How would you like to send this invoice?",
+          title: actionTitle,
         },
         async (buttonIndex) => {
           if (buttonIndex === 0) return;
 
           const shareMethod = ["", "sms", "whatsapp", "email", "native"][buttonIndex] as any;
-          await performSendInvoice(shareMethod);
+          await performSendInvoice(shareMethod, isBalanceCollection ? "balance" : "initial");
         }
       );
     } else {
       // Android - show custom modal or direct share
       Alert.alert(
-        "Send Invoice",
-        "How would you like to send this invoice?",
+        isBalanceCollection ? "Collect Balance" : "Send Invoice",
+        actionTitle,
         [
           { text: "Cancel", style: "cancel" },
-          { text: "SMS", onPress: () => performSendInvoice("sms") },
-          { text: "WhatsApp", onPress: () => performSendInvoice("whatsapp") },
-          { text: "Email", onPress: () => performSendInvoice("email") },
-          { text: "Share...", onPress: () => performSendInvoice("native") },
+          { text: "SMS", onPress: () => performSendInvoice("sms", isBalanceCollection ? "balance" : "initial") },
+          { text: "WhatsApp", onPress: () => performSendInvoice("whatsapp", isBalanceCollection ? "balance" : "initial") },
+          { text: "Email", onPress: () => performSendInvoice("email", isBalanceCollection ? "balance" : "initial") },
+          { text: "Share...", onPress: () => performSendInvoice("native", isBalanceCollection ? "balance" : "initial") },
         ]
       );
     }
   };
 
-  const performSendInvoice = async (shareMethod: "sms" | "whatsapp" | "email" | "native") => {
+  const performSendInvoice = async (
+    shareMethod: "sms" | "whatsapp" | "email" | "native",
+    messageType: "initial" | "balance" | "reminder" = "initial"
+  ) => {
     setIsSending(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
+      // IMPORTANT: sendInvoice uses the SAME link for all states
+      // The customer payment page shows the appropriate button
       const result = await sendInvoice(invoice, {
         includePaymentLink: true,
         shareMethod,
+        messageType,
       });
 
       if (result.success) {
         // Update invoice status to 'sent' if it was draft
         if (invoice.status === "draft") {
-          await updateInvoice(invoice.id, { status: "sent" });
+          await updateInvoice(invoice.id, { status: "sent", sent_at: new Date().toISOString() });
           setInvoice({ ...invoice, status: "sent" });
+          // Refresh send count for free tier tracking (only initial sends count)
+          loadSendCount();
         }
 
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -364,6 +404,18 @@ export default function InvoiceDetail() {
         },
       ]
     );
+  };
+
+  const handleAutoChaseToggle = async (value: boolean) => {
+    if (!isPro) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      router.push("/paywall?trigger=auto_chase");
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setAutoChaseEnabled(value);
+    await updateInvoice(invoice.id, { auto_chase_enabled: value });
+    setInvoice({ ...invoice, auto_chase_enabled: value });
   };
 
   const formatDate = (dateString: string) => {
@@ -620,6 +672,48 @@ export default function InvoiceDetail() {
           </Pressable>
         )}
 
+        {/* Auto-Chase Toggle (for sent/overdue invoices) */}
+        {(invoice.status === "sent" || invoice.status === "overdue" || invoice.status === "deposit_paid") && (
+          <Pressable
+            onPress={() => handleAutoChaseToggle(!autoChaseEnabled)}
+            style={[
+              styles.autoChaseCard,
+              {
+                backgroundColor: autoChaseEnabled ? colors.primary + "10" : colors.backgroundSecondary,
+                borderRadius: radius.md,
+              },
+            ]}
+          >
+            <View style={styles.autoChaseContent}>
+              <View style={styles.autoChaseHeader}>
+                <Zap size={18} color={autoChaseEnabled ? colors.primary : colors.textSecondary} />
+                <Text style={[typography.footnote, { color: colors.text, fontWeight: "600", marginLeft: spacing.xs }]}>
+                  Auto-Chase
+                </Text>
+                {!isPro && (
+                  <View style={[styles.proBadge, { backgroundColor: colors.systemOrange + "20" }]}>
+                    <Crown size={12} color={colors.systemOrange} />
+                    <Text style={[typography.caption2, { color: colors.systemOrange, fontWeight: "600", marginLeft: 2 }]}>
+                      PRO
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <Text style={[typography.caption1, { color: colors.textSecondary, marginTop: 2 }]}>
+                {autoChaseEnabled
+                  ? "AI will follow up until they pay"
+                  : "Enable automatic payment reminders"}
+              </Text>
+            </View>
+            <Switch
+              value={autoChaseEnabled}
+              onValueChange={handleAutoChaseToggle}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor="#fff"
+            />
+          </Pressable>
+        )}
+
         {/* Pro Upsell Banner - Show when invoice is unpaid for 5+ days and user is not Pro */}
         {!isPro &&
           invoice.status !== "paid" &&
@@ -709,6 +803,22 @@ export default function InvoiceDetail() {
             </Pressable>
             <View style={{ flex: 1, marginLeft: spacing.sm }}>
               <Button title="Mark as Paid" onPress={handleMarkAsPaid} />
+            </View>
+          </View>
+        )}
+
+        {invoice.status === "deposit_paid" && (
+          <View style={styles.actionRow}>
+            <View style={[styles.depositInfoBanner, { backgroundColor: colors.systemOrange + "15" }]}>
+              <Text style={[typography.caption1, { color: colors.systemOrange }]}>
+                Deposit received: {formatCurrency(invoice.amount_paid || 0, invoice.currency)}
+              </Text>
+            </View>
+            <View style={{ flex: 1, marginLeft: spacing.sm }}>
+              <Button
+                title={`Collect Balance ${formatCurrency(invoice.total - (invoice.amount_paid || 0), invoice.currency)}`}
+                onPress={handleSendInvoice}
+              />
             </View>
           </View>
         )}
@@ -871,5 +981,35 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 16,
     borderRadius: 12,
+  },
+  depositInfoBanner: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  autoChaseCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 16,
+    marginBottom: 16,
+  },
+  autoChaseContent: {
+    flex: 1,
+    marginRight: 12,
+  },
+  autoChaseHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  proBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 8,
   },
 });

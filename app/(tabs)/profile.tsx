@@ -343,14 +343,44 @@ export default function Profile() {
           <Text style={styles.subtitle}>Business information</Text>
         </Animated.View>
 
-        {/* Custom Branding Section */}
+        {/* Stripe Urgency Banner - Only show if not connected */}
+        {!stripeConnected && (
+          <Animated.View
+            style={[
+              styles.section,
+              { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+            ]}
+          >
+            <Pressable
+              onPress={() => router.push("/stripe/onboarding")}
+              style={[styles.stripeUrgencyBanner, { backgroundColor: colors.primary + "12" }]}
+            >
+              <View style={[styles.stripeUrgencyIcon, { backgroundColor: colors.primary + "20" }]}>
+                <CreditCard size={24} color={colors.primary} />
+              </View>
+              <View style={styles.stripeUrgencyContent}>
+                <Text style={[styles.stripeUrgencyTitle, { color: colors.text }]}>
+                  Accept card payments
+                </Text>
+                <Text style={[styles.stripeUrgencySubtitle, { color: colors.textSecondary }]}>
+                  Connect Stripe to get paid by Apple Pay & card.
+                </Text>
+              </View>
+              <View style={[styles.stripeUrgencyButton, { backgroundColor: colors.primary }]}>
+                <Text style={styles.stripeUrgencyButtonText}>Connect</Text>
+              </View>
+            </Pressable>
+          </Animated.View>
+        )}
+
+        {/* ========== LOOK PROFESSIONAL ========== */}
         <Animated.View
           style={[
             styles.section,
             { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
           ]}
         >
-          <Text style={[styles.sectionTitle, { marginBottom: spacing.sm }]}>Branding</Text>
+          <Text style={[styles.sectionTitle, { marginBottom: spacing.sm }]}>Look Professional</Text>
           <View style={styles.settingsCard}>
             <Pressable
               onPress={pickImage}
@@ -499,14 +529,14 @@ export default function Profile() {
           </View>
         </Animated.View>
 
-        {/* Auto-Reminders Section ("Bad Cop") */}
+        {/* ========== GET PAID FASTER ========== */}
         <Animated.View
           style={[
             styles.section,
             { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
           ]}
         >
-          <Text style={[styles.sectionTitle, { marginBottom: spacing.sm }]}>Payment Collection</Text>
+          <Text style={[styles.sectionTitle, { marginBottom: spacing.sm }]}>Get Paid Faster</Text>
 
           {/* Payment Collection Card */}
           <View style={styles.settingsCard}>
@@ -680,6 +710,45 @@ export default function Profile() {
           </View>
         </Animated.View>
 
+        {/* ========== TAXES MADE SIMPLE ========== */}
+        <Animated.View
+          style={[
+            styles.section,
+            { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+          ]}
+        >
+          <Text style={[styles.sectionTitle, { marginBottom: spacing.sm }]}>Taxes Made Simple</Text>
+          <View style={styles.settingsCard}>
+            <Pressable
+              onPress={() => router.push("/export")}
+              style={[styles.settingRow, { paddingVertical: 16 }]}
+            >
+              <View style={styles.iconWithBadge}>
+                {!isPro && (
+                  <View style={[styles.proPillSmall, styles.proPillAbsolute, { backgroundColor: colors.systemOrange + "15" }]}>
+                    <Crown size={10} color={colors.systemOrange} />
+                    <Text style={[styles.proPillText, { color: colors.systemOrange }]}>PRO</Text>
+                  </View>
+                )}
+                <View style={[styles.settingIcon, { backgroundColor: "#34C759" + "15" }]}>
+                  <Download size={20} color="#34C759" />
+                </View>
+              </View>
+              <View style={styles.settingContent}>
+                <Text style={[typography.body, { color: colors.text, fontWeight: "600" }]}>
+                  Export for QuickBooks
+                </Text>
+                <Text style={[typography.caption1, { color: colors.textTertiary, marginTop: 4, lineHeight: 18 }]}>
+                  {isPro
+                    ? "Download CSV/IIF for your accountant"
+                    : "Export invoices for tax time. QuickBooks, Wave, Excel ready."}
+                </Text>
+              </View>
+              <ChevronRight size={20} color={colors.textTertiary} />
+            </Pressable>
+          </View>
+        </Animated.View>
+
         {/* Data & Sync Section */}
         <Animated.View
           style={[
@@ -744,16 +813,6 @@ export default function Profile() {
                   </View>
                 )
               }
-            />
-
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-            <SettingRow
-              icon={<Download size={20} color={colors.primary} />}
-              title="Export Data"
-              subtitle="Export invoices for QuickBooks"
-              rightElement={<ChevronRight size={20} color={colors.textTertiary} />}
-              onPress={() => router.push("/export")}
             />
           </View>
         </Animated.View>
@@ -974,6 +1033,44 @@ const createStyles = (colors: any, isDark: boolean, spacing: any, radius: any, t
       ...typography.subhead,
       color: colors.textTertiary,
       marginTop: spacing.xs,
+    },
+    // Stripe Urgency Banner
+    stripeUrgencyBanner: {
+      flexDirection: "row",
+      alignItems: "center",
+      padding: spacing.md,
+      borderRadius: radius.lg,
+      gap: spacing.sm,
+    },
+    stripeUrgencyIcon: {
+      width: 44,
+      height: 44,
+      borderRadius: 12,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    stripeUrgencyContent: {
+      flex: 1,
+    },
+    stripeUrgencyTitle: {
+      fontSize: 16,
+      fontWeight: "600",
+      marginBottom: 2,
+    },
+    stripeUrgencySubtitle: {
+      fontSize: 13,
+      fontWeight: "400",
+      lineHeight: 18,
+    },
+    stripeUrgencyButton: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 8,
+    },
+    stripeUrgencyButtonText: {
+      color: "#FFFFFF",
+      fontSize: 14,
+      fontWeight: "600",
     },
     logoSection: {
       alignItems: "center",

@@ -573,24 +573,52 @@ export async function upsertReminderSettings(
 export async function getDashboardStats(): Promise<{
   totalRevenue: number;
   pendingAmount: number;
+  overdueAmount: number;
+  paidThisWeek: number;
   invoiceCount: number;
   paidCount: number;
   overdueCount: number;
+  collectedByAutoChase: number;
+  totalClientsCount: number;
+  totalInvoicesCount: number;
 }> {
+  // Calculate date 7 days ago for "paid this week"
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const sevenDaysAgoISO = sevenDaysAgo.toISOString();
+
+  // Fetch invoices with chase events for auto-chase ROI tracking
   const { data: invoices, error } = await supabase
     .from("invoices")
-    .select("total, status");
+    .select("id, total, status, paid_at, auto_chase_enabled");
 
   if (error) {
     console.error("Error fetching dashboard stats:", error);
     return {
       totalRevenue: 0,
       pendingAmount: 0,
+      overdueAmount: 0,
+      paidThisWeek: 0,
       invoiceCount: 0,
       paidCount: 0,
       overdueCount: 0,
+      collectedByAutoChase: 0,
+      totalClientsCount: 0,
+      totalInvoicesCount: 0,
     };
   }
+
+  // Get invoices that had chase events (auto-chase reminders sent)
+  const { data: chaseEvents } = await supabase
+    .from("chase_events")
+    .select("invoice_id");
+
+  const chasedInvoiceIds = new Set((chaseEvents || []).map((e) => e.invoice_id));
+
+  // Get total clients count
+  const { count: clientsCount } = await supabase
+    .from("clients")
+    .select("id", { count: "exact", head: true });
 
   const stats = (invoices || []).reduce(
     (acc, invoice) => {
@@ -599,10 +627,19 @@ export async function getDashboardStats(): Promise<{
       if (invoice.status === "paid") {
         acc.totalRevenue += invoice.total;
         acc.paidCount++;
-      } else if (invoice.status === "sent" || invoice.status === "overdue") {
+        // Check if paid within last 7 days
+        if (invoice.paid_at && invoice.paid_at >= sevenDaysAgoISO) {
+          acc.paidThisWeek += invoice.total;
+        }
+        // PRO ROI: Check if this invoice was collected via auto-chase
+        if (chasedInvoiceIds.has(invoice.id)) {
+          acc.collectedByAutoChase += invoice.total;
+        }
+      } else if (invoice.status === "sent" || invoice.status === "overdue" || invoice.status === "deposit_paid") {
         acc.pendingAmount += invoice.total;
         if (invoice.status === "overdue") {
           acc.overdueCount++;
+          acc.overdueAmount += invoice.total;
         }
       }
 
@@ -611,13 +648,44 @@ export async function getDashboardStats(): Promise<{
     {
       totalRevenue: 0,
       pendingAmount: 0,
+      overdueAmount: 0,
+      paidThisWeek: 0,
       invoiceCount: 0,
       paidCount: 0,
       overdueCount: 0,
+      collectedByAutoChase: 0,
     }
   );
 
-  return stats;
+  return {
+    ...stats,
+    totalClientsCount: clientsCount || 0,
+    totalInvoicesCount: invoices?.length || 0,
+  };
+}
+
+/**
+ * Get count of invoices sent in the current month
+ * Used for free tier send limit tracking
+ */
+export async function getSendsThisMonth(): Promise<number> {
+  // Get first day of current month at midnight
+  const now = new Date();
+  const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const firstOfMonthISO = firstOfMonth.toISOString();
+
+  const { count, error } = await supabase
+    .from("invoices")
+    .select("*", { count: "exact", head: true })
+    .not("sent_at", "is", null)
+    .gte("sent_at", firstOfMonthISO);
+
+  if (error) {
+    console.error("Error fetching sends this month:", error);
+    return 0;
+  }
+
+  return count || 0;
 }
 
 // ============================================================================

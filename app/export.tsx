@@ -10,8 +10,10 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { Crown, Lock } from "lucide-react-native";
 import { router } from "expo-router";
 import { useTheme } from "@/lib/theme";
+import { useSubscriptionStore } from "@/store/useSubscriptionStore";
 import {
   exportAndShareInvoices,
   getDateRangePresets,
@@ -21,6 +23,7 @@ import {
 
 export default function ExportScreen() {
   const { colors } = useTheme();
+  const { isPro } = useSubscriptionStore();
   const [format, setFormat] = useState<ExportFormat>("csv");
   const [dateRange, setDateRange] = useState("all_time");
   const [status, setStatus] = useState("");
@@ -31,6 +34,12 @@ export default function ExportScreen() {
   const statusOptions = getStatusOptions();
 
   const handleExport = async () => {
+    // PRO gate - redirect to paywall if not subscribed
+    if (!isPro) {
+      router.push("/paywall?trigger=export");
+      return;
+    }
+
     setIsExporting(true);
 
     try {
@@ -273,17 +282,34 @@ export default function ExportScreen() {
 
       {/* Export Button */}
       <View style={[styles.footer, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
+        {!isPro && (
+          <View style={[styles.proUpgradeHint, { backgroundColor: colors.systemOrange + "12" }]}>
+            <Crown size={16} color={colors.systemOrange} />
+            <Text style={[styles.proUpgradeHintText, { color: colors.systemOrange }]}>
+              PRO feature — Upgrade to download exports
+            </Text>
+          </View>
+        )}
         <TouchableOpacity
-          style={[styles.exportButton, { backgroundColor: colors.primary }]}
+          style={[
+            styles.exportButton,
+            { backgroundColor: isPro ? colors.primary : colors.systemOrange },
+          ]}
           onPress={handleExport}
           disabled={isExporting}
         >
           {isExporting ? (
             <ActivityIndicator color="white" />
-          ) : (
+          ) : isPro ? (
             <>
               <Ionicons name="download" size={20} color="white" />
               <Text style={styles.exportButtonText}>Export Invoices</Text>
+            </>
+          ) : (
+            <>
+              <Lock size={18} color="white" />
+              <Text style={styles.exportButtonText}>Unlock Export</Text>
+              <Crown size={16} color="white" />
             </>
           )}
         </TouchableOpacity>
@@ -427,6 +453,20 @@ const styles = StyleSheet.create({
   exportButtonText: {
     color: "white",
     fontSize: 16,
+    fontWeight: "600",
+  },
+  proUpgradeHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    marginBottom: 12,
+    gap: 8,
+  },
+  proUpgradeHintText: {
+    fontSize: 14,
     fontWeight: "600",
   },
 });

@@ -11,7 +11,9 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
-export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'void' | 'overdue';
+export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'void' | 'overdue' | 'deposit_paid';
+export type DepositType = 'percent' | 'fixed';
+export type LateFeeType = 'percent' | 'fixed';
 export type SubscriptionStatus = 'free' | 'active' | 'canceled' | 'past_due' | 'trialing';
 export type SubscriptionTier = 'free' | 'pro';
 
@@ -140,7 +142,24 @@ export interface Database {
           due_date: string | null;
           paid_at: string | null;
           sent_at: string | null;
+          viewed_at: string | null;
+          tracking_id: string | null;
           notes: string | null;
+          // Deposit fields
+          deposit_enabled: boolean;
+          deposit_type: DepositType | null;
+          deposit_value: number | null; // percent (1-100) or fixed cents
+          deposit_amount: number; // computed deposit in cents
+          amount_paid: number; // total paid so far in cents
+          deposit_payment_intent_id: string | null;
+          balance_payment_intent_id: string | null;
+          approved_at: string | null;
+          deposit_paid_at: string | null;
+          // Per-invoice settings
+          auto_chase_enabled: boolean;
+          late_fee_enabled: boolean;
+          late_fee_type: LateFeeType | null;
+          late_fee_value: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -164,7 +183,24 @@ export interface Database {
           due_date?: string | null;
           paid_at?: string | null;
           sent_at?: string | null;
+          viewed_at?: string | null;
+          tracking_id?: string | null;
           notes?: string | null;
+          // Deposit fields
+          deposit_enabled?: boolean;
+          deposit_type?: DepositType | null;
+          deposit_value?: number | null;
+          deposit_amount?: number;
+          amount_paid?: number;
+          deposit_payment_intent_id?: string | null;
+          balance_payment_intent_id?: string | null;
+          approved_at?: string | null;
+          deposit_paid_at?: string | null;
+          // Per-invoice settings
+          auto_chase_enabled?: boolean;
+          late_fee_enabled?: boolean;
+          late_fee_type?: LateFeeType | null;
+          late_fee_value?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -188,7 +224,24 @@ export interface Database {
           due_date?: string | null;
           paid_at?: string | null;
           sent_at?: string | null;
+          viewed_at?: string | null;
+          tracking_id?: string | null;
           notes?: string | null;
+          // Deposit fields
+          deposit_enabled?: boolean;
+          deposit_type?: DepositType | null;
+          deposit_value?: number | null;
+          deposit_amount?: number;
+          amount_paid?: number;
+          deposit_payment_intent_id?: string | null;
+          balance_payment_intent_id?: string | null;
+          approved_at?: string | null;
+          deposit_paid_at?: string | null;
+          // Per-invoice settings
+          auto_chase_enabled?: boolean;
+          late_fee_enabled?: boolean;
+          late_fee_type?: LateFeeType | null;
+          late_fee_value?: number | null;
           updated_at?: string;
         };
       };

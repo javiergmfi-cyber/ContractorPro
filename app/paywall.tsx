@@ -92,6 +92,26 @@ const CONTEXTUAL_MESSAGES: Record<string, { headline: string; subheadline: strin
     headline: "Did They\nSee It?",
     subheadline: "Know exactly when clients view your invoice.",
   },
+  send_limit: {
+    headline: "You've Hit\nYour Limit.",
+    subheadline: "Upgrade to PRO for unlimited invoice sends.",
+  },
+  export: {
+    headline: "Export for\nTax Time.",
+    subheadline: "Download CSV & IIF for QuickBooks.",
+  },
+  instant_payouts: {
+    headline: "Get Paid\nFaster.",
+    subheadline: "Next-day payouts instead of waiting 3 days.",
+  },
+  deposits: {
+    headline: "Collect Deposits\nUpfront.",
+    subheadline: "Get paid before you start. No chasing.",
+  },
+  auto_chase: {
+    headline: "Stop Chasing\nPayments.",
+    subheadline: "Let AI follow up until they pay.",
+  },
 };
 
 export default function PaywallScreen() {

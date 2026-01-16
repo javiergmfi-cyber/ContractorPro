@@ -7,6 +7,9 @@ import { create } from "zustand";
 import { CustomerInfo, PurchasesOffering, PurchasesPackage } from "react-native-purchases";
 import * as purchases from "@/services/purchases";
 
+// Free tier limits
+const FREE_MONTHLY_SEND_LIMIT = 10;
+
 interface SubscriptionState {
   // State
   isInitialized: boolean;
@@ -15,6 +18,10 @@ interface SubscriptionState {
   customerInfo: CustomerInfo | null;
   offerings: PurchasesOffering | null;
   error: string | null;
+
+  // Send limit tracking
+  sendsThisMonth: number;
+  sendLimitReached: boolean;
 
   // Actions
   initialize: (userId?: string) => Promise<void>;
@@ -25,11 +32,17 @@ interface SubscriptionState {
   purchasePackage: (pkg: PurchasesPackage) => Promise<{ success: boolean; error?: string }>;
   restorePurchases: () => Promise<{ success: boolean; error?: string }>;
 
+  // Send limit actions
+  setSendsThisMonth: (count: number) => void;
+  canSendInvoice: () => boolean;
+  getRemainingInvoiceSends: () => number;
+
   // Feature Gating Checks
   canUseBadCopAutopilot: () => boolean;
   canUseReadReceipts: () => boolean;
   canUseCustomBranding: () => boolean;
   canUseInstantPayouts: () => boolean;
+  canExport: () => boolean;
 
   // Reset
   reset: () => void;
@@ -42,6 +55,8 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
   customerInfo: null,
   offerings: null,
   error: null,
+  sendsThisMonth: 0,
+  sendLimitReached: false,
 
   initialize: async (userId?: string) => {
     try {
@@ -155,11 +170,33 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
     }
   },
 
+  // Send limit tracking
+  setSendsThisMonth: (count: number) => {
+    const { isPro } = get();
+    set({
+      sendsThisMonth: count,
+      sendLimitReached: !isPro && count >= FREE_MONTHLY_SEND_LIMIT,
+    });
+  },
+
+  canSendInvoice: () => {
+    const { isPro, sendsThisMonth } = get();
+    if (isPro) return true;
+    return sendsThisMonth < FREE_MONTHLY_SEND_LIMIT;
+  },
+
+  getRemainingInvoiceSends: () => {
+    const { isPro, sendsThisMonth } = get();
+    if (isPro) return Infinity;
+    return Math.max(0, FREE_MONTHLY_SEND_LIMIT - sendsThisMonth);
+  },
+
   // Feature Gating Checks (Pro-only features)
   canUseBadCopAutopilot: () => get().isPro,
   canUseReadReceipts: () => get().isPro,
   canUseCustomBranding: () => get().isPro,
   canUseInstantPayouts: () => get().isPro,
+  canExport: () => get().isPro,
 
   reset: () =>
     set({
@@ -169,8 +206,13 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
       customerInfo: null,
       offerings: null,
       error: null,
+      sendsThisMonth: 0,
+      sendLimitReached: false,
     }),
 }));
+
+// Export the free tier limit for use elsewhere
+export const FREE_SENDS_PER_MONTH = FREE_MONTHLY_SEND_LIMIT;
 
 /**
  * Hook for checking feature availability with contextual paywall trigger

@@ -19,9 +19,15 @@ import {
   CheckCircle,
   Send,
   XCircle,
+  Eye,
+  DollarSign,
+  Zap,
+  ChevronRight,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
 import { useTheme } from "@/lib/theme";
+import { useSubscriptionStore } from "@/store/useSubscriptionStore";
 import { Invoice, InvoiceStatus, formatCurrency, formatRelativeDate } from "@/types";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -62,7 +68,9 @@ export function InvoiceCard({
   onVoid,
   onDuplicate,
 }: InvoiceCardProps) {
+  const router = useRouter();
   const { colors, isDark } = useTheme();
+  const { isPro } = useSubscriptionStore();
   const swipeableRef = useRef<Swipeable>(null);
 
   // Animation values
@@ -81,6 +89,8 @@ export function InvoiceCard({
     switch (status) {
       case "paid":
         return colors.statusPaid;
+      case "deposit_paid":
+        return colors.systemOrange; // Orange for deposit paid, balance remaining
       case "sent":
         return colors.statusSent;
       case "overdue":
@@ -93,6 +103,11 @@ export function InvoiceCard({
         return colors.textTertiary;
     }
   };
+
+  // Check if invoice has deposit info to display
+  const hasDepositInfo = invoice.deposit_enabled && invoice.deposit_amount && invoice.deposit_amount > 0;
+  const remainingBalance = hasDepositInfo ? invoice.total - (invoice.amount_paid || 0) : invoice.total;
+  const isDepositPaid = invoice.status === "deposit_paid" || (hasDepositInfo && (invoice.amount_paid || 0) > 0);
 
   const statusDotColor = getStatusDotColor(invoice.status);
 
@@ -347,6 +362,67 @@ export function InvoiceCard({
     ? formatRelativeDate(invoice.created_at)
     : "Just now";
 
+  // Format last action line (Sent X ago • Viewed Y ago OR Deposit info)
+  const getLastActionLine = (): string => {
+    // If deposit is paid, show deposit info line instead
+    if (isDepositPaid && hasDepositInfo) {
+      const paidAmount = invoice.amount_paid || 0;
+      const balanceAmount = invoice.total - paidAmount;
+      return `Deposit paid ${formatCurrency(paidAmount, invoice.currency)} • Balance ${formatCurrency(balanceAmount, invoice.currency)}`;
+    }
+
+    const parts: string[] = [];
+
+    if (invoice.sent_at) {
+      const sentDate = new Date(invoice.sent_at);
+      const now = new Date();
+      const diffMs = now.getTime() - sentDate.getTime();
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+
+      if (diffDays > 0) {
+        parts.push(`Sent ${diffDays}d ago`);
+      } else if (diffHours > 0) {
+        parts.push(`Sent ${diffHours}h ago`);
+      } else {
+        parts.push("Sent just now");
+      }
+    }
+
+    if (invoice.viewed_at) {
+      const viewedDate = new Date(invoice.viewed_at);
+      const now = new Date();
+      const diffMs = now.getTime() - viewedDate.getTime();
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+
+      if (diffDays > 0) {
+        parts.push(`Viewed ${diffDays}d ago`);
+      } else if (diffHours > 0) {
+        parts.push(`Viewed ${diffHours}h ago`);
+      } else {
+        parts.push("Viewed just now");
+      }
+    }
+
+    return parts.join(" • ");
+  };
+
+  const lastActionLine = getLastActionLine();
+  const isViewed = !!invoice.viewed_at;
+
+  // Show contextual PRO upsell for viewed but unpaid invoices (non-PRO users)
+  const showProUpsell =
+    !isPro &&
+    isViewed &&
+    (invoice.status === "sent" || invoice.status === "overdue") &&
+    !isDepositPaid;
+
+  const handleProUpsellPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    router.push("/paywall?trigger=auto_chase");
+  };
+
   const menuActions = getMenuActions();
 
   return (
@@ -381,7 +457,7 @@ export function InvoiceCard({
               },
             ]}
           >
-            {/* Top Row: Client Name + Status Dot */}
+            {/* Top Row: Client Name + Status Indicators */}
             <View style={styles.topRow}>
               {/* Client Name (Top Left) */}
               <Text
@@ -391,40 +467,90 @@ export function InvoiceCard({
                 {invoice.client_name}
               </Text>
 
-              {/* Status Dot (Top Right) - Glowing */}
-              <View style={styles.statusDotContainer}>
-                {/* Glow layer */}
-                <View
-                  style={[
-                    styles.statusDotGlow,
-                    {
-                      backgroundColor: statusDotColor,
-                      shadowColor: statusDotColor,
-                    },
-                  ]}
-                />
-                {/* Main dot */}
-                <View
-                  style={[
-                    styles.statusDot,
-                    { backgroundColor: statusDotColor },
-                  ]}
-                />
+              {/* Status Indicators (Top Right) */}
+              <View style={styles.statusIndicators}>
+                {/* Deposit Paid Pill */}
+                {isDepositPaid && invoice.status !== "paid" && (
+                  <View style={[styles.depositPill, { backgroundColor: colors.systemOrange + "18" }]}>
+                    <DollarSign size={10} color={colors.systemOrange} strokeWidth={2.5} />
+                    <Text style={[styles.depositPillText, { color: colors.systemOrange }]}>
+                      Deposit Paid
+                    </Text>
+                  </View>
+                )}
+
+                {/* Viewed Pill - PRO feature surfaced (only show if not deposit paid) */}
+                {isViewed && invoice.status !== "paid" && !isDepositPaid && (
+                  <View style={[styles.viewedPill, { backgroundColor: colors.statusPaid + "18" }]}>
+                    <Eye size={10} color={colors.statusPaid} strokeWidth={2.5} />
+                    <Text style={[styles.viewedPillText, { color: colors.statusPaid }]}>
+                      Viewed
+                    </Text>
+                  </View>
+                )}
+
+                {/* Status Dot - Glowing */}
+                <View style={styles.statusDotContainer}>
+                  {/* Glow layer */}
+                  <View
+                    style={[
+                      styles.statusDotGlow,
+                      {
+                        backgroundColor: statusDotColor,
+                        shadowColor: statusDotColor,
+                      },
+                    ]}
+                  />
+                  {/* Main dot */}
+                  <View
+                    style={[
+                      styles.statusDot,
+                      { backgroundColor: statusDotColor },
+                    ]}
+                  />
+                </View>
               </View>
             </View>
 
+            {/* Middle Row: Last Action Line (Sent X ago • Viewed Y ago) */}
+            {lastActionLine && (
+              <Text style={[styles.lastActionText, { color: colors.textTertiary }]}>
+                {lastActionLine}
+              </Text>
+            )}
+
             {/* Bottom Row: Date + Amount */}
             <View style={styles.bottomRow}>
-              {/* Relative Date (Bottom Left) */}
-              <Text style={[styles.dateText, { color: colors.textTertiary }]}>
-                {relativeDate}
-              </Text>
+              {/* Relative Date (Bottom Left) - only show if no lastActionLine */}
+              {!lastActionLine && (
+                <Text style={[styles.dateText, { color: colors.textTertiary }]}>
+                  {relativeDate}
+                </Text>
+              )}
+              {lastActionLine && <View />}
 
               {/* Amount (Bottom Right) */}
               <Text style={[styles.amount, { color: colors.text }]}>
                 {formattedAmount}
               </Text>
             </View>
+
+            {/* Contextual PRO Upsell - Show for viewed but unpaid invoices */}
+            {showProUpsell && (
+              <Pressable
+                onPress={handleProUpsellPress}
+                style={[
+                  styles.proUpsellBanner,
+                  { backgroundColor: colors.primary + "10", borderTopColor: colors.border },
+                ]}
+              >
+                <Zap size={14} color={colors.primary} strokeWidth={2.5} />
+                <Text style={[styles.proUpsellText, { color: colors.primary }]}>
+                  Viewed but not paid? Let Auto-Chase follow up
+                </Text>
+                <ChevronRight size={14} color={colors.primary} />
+              </Pressable>
+            )}
           </Animated.View>
         </Pressable>
       </Swipeable>
@@ -483,20 +609,42 @@ export function InvoiceCard({
             >
               {invoice.client_name}
             </Text>
-            <View style={styles.statusDotContainer}>
-              <View
-                style={[
-                  styles.statusDotGlow,
-                  { backgroundColor: statusDotColor, shadowColor: statusDotColor },
-                ]}
-              />
-              <View style={[styles.statusDot, { backgroundColor: statusDotColor }]} />
+            <View style={styles.statusIndicators}>
+              {isDepositPaid && invoice.status !== "paid" && (
+                <View style={[styles.depositPill, { backgroundColor: colors.systemOrange + "18" }]}>
+                  <DollarSign size={10} color={colors.systemOrange} strokeWidth={2.5} />
+                  <Text style={[styles.depositPillText, { color: colors.systemOrange }]}>Deposit Paid</Text>
+                </View>
+              )}
+              {isViewed && invoice.status !== "paid" && !isDepositPaid && (
+                <View style={[styles.viewedPill, { backgroundColor: colors.statusPaid + "18" }]}>
+                  <Eye size={10} color={colors.statusPaid} strokeWidth={2.5} />
+                  <Text style={[styles.viewedPillText, { color: colors.statusPaid }]}>Viewed</Text>
+                </View>
+              )}
+              <View style={styles.statusDotContainer}>
+                <View
+                  style={[
+                    styles.statusDotGlow,
+                    { backgroundColor: statusDotColor, shadowColor: statusDotColor },
+                  ]}
+                />
+                <View style={[styles.statusDot, { backgroundColor: statusDotColor }]} />
+              </View>
             </View>
           </View>
-          <View style={styles.bottomRow}>
-            <Text style={[styles.dateText, { color: colors.textTertiary }]}>
-              {relativeDate}
+          {lastActionLine && (
+            <Text style={[styles.lastActionText, { color: colors.textTertiary }]}>
+              {lastActionLine}
             </Text>
+          )}
+          <View style={styles.bottomRow}>
+            {!lastActionLine && (
+              <Text style={[styles.dateText, { color: colors.textTertiary }]}>
+                {relativeDate}
+              </Text>
+            )}
+            {lastActionLine && <View />}
             <Text style={[styles.amount, { color: colors.text }]}>
               {formattedAmount}
             </Text>
@@ -569,7 +717,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 16,
+    marginBottom: 8,
   },
   clientName: {
     fontSize: 17,
@@ -577,6 +725,43 @@ const styles = StyleSheet.create({
     letterSpacing: -0.4,
     flex: 1,
     marginRight: 12,
+  },
+  statusIndicators: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  viewedPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    gap: 4,
+  },
+  viewedPillText: {
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: -0.1,
+  },
+  depositPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    gap: 4,
+  },
+  depositPillText: {
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: -0.1,
+  },
+  lastActionText: {
+    fontSize: 12,
+    fontWeight: "500",
+    letterSpacing: -0.1,
+    marginBottom: 8,
   },
   statusDotContainer: {
     width: 12,
@@ -665,5 +850,25 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     letterSpacing: -0.4,
     marginLeft: 12,
+  },
+  proUpsellBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
+    marginHorizontal: -18,
+    marginBottom: -18,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    borderBottomLeftRadius: 22,
+    borderBottomRightRadius: 22,
+    gap: 6,
+  },
+  proUpsellText: {
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: -0.1,
+    flex: 1,
   },
 });

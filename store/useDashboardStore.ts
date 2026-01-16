@@ -19,9 +19,14 @@ interface DashboardState {
 const defaultStats: DashboardStats = {
   totalRevenue: 0,
   pendingAmount: 0,
+  overdueAmount: 0,
+  paidThisWeek: 0,
   invoiceCount: 0,
   paidCount: 0,
   overdueCount: 0,
+  collectedByAutoChase: 0,
+  totalClientsCount: 0,
+  totalInvoicesCount: 0,
 };
 
 export const useDashboardStore = create<DashboardState>((set) => ({

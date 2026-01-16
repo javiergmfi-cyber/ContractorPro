@@ -29,6 +29,8 @@ import {
   Check,
   Shield,
   Grid3x3,
+  FileEdit,
+  Send,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { VoiceButton } from "@/components/VoiceButton";
@@ -212,7 +214,9 @@ export default function Dashboard() {
 
   // Recent invoices (last 5)
   const recentInvoices = invoices.slice(0, 5);
-  const overdueCount = stats?.overdueInvoicesCount || 0;
+
+  // Draft invoices - show up to 3
+  const draftInvoices = invoices.filter((inv) => inv.status === "draft").slice(0, 3);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top"]}>
@@ -283,7 +287,7 @@ export default function Dashboard() {
         )}
 
         {/* ═══════════════════════════════════════════════════════════
-            REVENUE CARD - Apple Cash Style Hero (Hidden on first run)
+            MONEY STATUS HERO - "Who owes me money?" (Hidden on first run)
         ═══════════════════════════════════════════════════════════ */}
         {!isFirstRun && (
         <Animated.View
@@ -313,42 +317,66 @@ export default function Dashboard() {
               },
             ]}
           >
-            {/* Card Header */}
-            <View style={styles.revenueHeader}>
-              <View style={[styles.revenueIconContainer, { backgroundColor: colors.primary + "15" }]}>
-                <TrendingUp size={18} color={colors.primary} strokeWidth={2.5} />
-              </View>
-              <Text style={[styles.revenueLabel, { color: colors.textTertiary }]}>
-                Total Revenue
-              </Text>
-            </View>
-
-            {/* Main Amount - Massive 48pt */}
-            <AnimatedCurrency
-              cents={stats?.totalRevenue || 0}
-              currency={profile?.default_currency || "USD"}
-              style={[styles.revenueAmount, { color: colors.text }]}
-              duration={1200}
-            />
-
-            {/* Status Pills Row */}
-            <View style={styles.statusPillsRow}>
-              {/* Paid Count */}
-              <View style={[styles.statusPill, { backgroundColor: colors.statusPaid + "15" }]}>
-                <Text style={[styles.statusPillText, { color: colors.statusPaid }]}>
-                  {stats?.paidInvoicesCount || 0} Paid
-                </Text>
-              </View>
-
-              {/* Overdue Pill - Only show if > 0 */}
-              {overdueCount > 0 && (
-                <View style={[styles.statusPill, styles.statusPillOverdue, { backgroundColor: colors.statusOverdue + "15" }]}>
-                  <AlertCircle size={12} color={colors.statusOverdue} />
-                  <Text style={[styles.statusPillText, { color: colors.statusOverdue, marginLeft: 4 }]}>
-                    {overdueCount} Overdue
+            {/* Overdue Amount - LARGEST, RED emphasis */}
+            {(stats?.overdueAmount || 0) > 0 && (
+              <Pressable
+                onPress={() => router.push("/(tabs)/invoices")}
+                style={styles.moneyStatusRow}
+              >
+                <View style={styles.moneyStatusLeft}>
+                  <View style={[styles.moneyStatusDot, { backgroundColor: colors.statusOverdue }]} />
+                  <Text style={[styles.moneyStatusLabel, { color: colors.statusOverdue }]}>
+                    Overdue
                   </Text>
                 </View>
-              )}
+                <AnimatedCurrency
+                  cents={stats?.overdueAmount || 0}
+                  currency={profile?.default_currency || "USD"}
+                  style={[styles.moneyStatusAmountLarge, { color: colors.statusOverdue }]}
+                  duration={1200}
+                />
+              </Pressable>
+            )}
+
+            {/* Unpaid Amount - Primary focus */}
+            <Pressable
+              onPress={() => router.push("/(tabs)/invoices")}
+              style={styles.moneyStatusRow}
+            >
+              <View style={styles.moneyStatusLeft}>
+                <View style={[styles.moneyStatusDot, { backgroundColor: colors.primary }]} />
+                <Text style={[styles.moneyStatusLabel, { color: colors.textSecondary }]}>
+                  Unpaid
+                </Text>
+              </View>
+              <AnimatedCurrency
+                cents={stats?.pendingAmount || 0}
+                currency={profile?.default_currency || "USD"}
+                style={[
+                  (stats?.overdueAmount || 0) > 0 ? styles.moneyStatusAmount : styles.moneyStatusAmountLarge,
+                  { color: colors.text }
+                ]}
+                duration={1200}
+              />
+            </Pressable>
+
+            {/* Divider */}
+            <View style={[styles.moneyStatusDivider, { backgroundColor: colors.border }]} />
+
+            {/* Paid This Week - Positive reinforcement (smaller) */}
+            <View style={styles.moneyStatusRow}>
+              <View style={styles.moneyStatusLeft}>
+                <View style={[styles.moneyStatusDot, { backgroundColor: colors.statusPaid }]} />
+                <Text style={[styles.moneyStatusLabel, { color: colors.textTertiary }]}>
+                  Paid this week
+                </Text>
+              </View>
+              <AnimatedCurrency
+                cents={stats?.paidThisWeek || 0}
+                currency={profile?.default_currency || "USD"}
+                style={[styles.moneyStatusAmountSmall, { color: colors.statusPaid }]}
+                duration={1200}
+              />
             </View>
           </LinearGradient>
         </Animated.View>
@@ -386,6 +414,55 @@ export default function Dashboard() {
               </View>
               <ChevronRight size={20} color={colors.primary} />
             </Pressable>
+          </Animated.View>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════
+            DRAFTS SECTION - Unfinished invoices
+        ═══════════════════════════════════════════════════════════ */}
+        {!isFirstRun && draftInvoices.length > 0 && (
+          <Animated.View style={[styles.draftsSection, { opacity: fadeAnim }]}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <FileEdit size={18} color={colors.statusDraft} style={{ marginRight: 8 }} />
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                  Drafts
+                </Text>
+              </View>
+            </View>
+
+            <View style={[styles.draftsCard, { backgroundColor: colors.card, borderRadius: radius.lg }]}>
+              {draftInvoices.map((draft, index) => (
+                <Pressable
+                  key={draft.id}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    router.push(`/invoice/${draft.id}`);
+                  }}
+                  style={({ pressed }) => [
+                    styles.draftRow,
+                    index < draftInvoices.length - 1 && {
+                      borderBottomWidth: 1,
+                      borderBottomColor: colors.border,
+                    },
+                    { opacity: pressed ? 0.7 : 1 },
+                  ]}
+                >
+                  <View style={styles.draftInfo}>
+                    <Text style={[styles.draftClient, { color: colors.text }]} numberOfLines={1}>
+                      {draft.client_name || "Unnamed Client"}
+                    </Text>
+                    <Text style={[styles.draftAmount, { color: colors.textSecondary }]}>
+                      {formatCurrency(draft.total, profile?.default_currency)}
+                    </Text>
+                  </View>
+                  <View style={[styles.draftCTA, { backgroundColor: colors.primary }]}>
+                    <Send size={14} color="#FFFFFF" />
+                    <Text style={styles.draftCTAText}>Finish & Send</Text>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
           </Animated.View>
         )}
 
@@ -514,6 +591,39 @@ export default function Dashboard() {
                 Pending
               </Text>
             </View>
+          </Animated.View>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════
+            PRO ROI PROOF - "Collected by Auto-Chase" (PRO users only)
+        ═══════════════════════════════════════════════════════════ */}
+        {!isFirstRun && isPro && (stats?.collectedByAutoChase || 0) > 0 && (
+          <Animated.View style={[styles.proRoiSection, { opacity: fadeAnim }]}>
+            <LinearGradient
+              colors={isDark
+                ? ["#1C3D1F", "#1C2D1E"]
+                : ["#E8F5E9", "#F1F8E9"]
+              }
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[styles.proRoiCard, { borderRadius: radius.lg }]}
+            >
+              <View style={styles.proRoiLeft}>
+                <View style={[styles.proRoiBadge, { backgroundColor: colors.statusPaid + "30" }]}>
+                  <Zap size={14} color={colors.statusPaid} />
+                  <Text style={[styles.proRoiBadgeText, { color: colors.statusPaid }]}>PRO</Text>
+                </View>
+                <Text style={[styles.proRoiLabel, { color: colors.statusPaid }]}>
+                  Collected by Auto-Chase
+                </Text>
+                <Text style={[styles.proRoiSubtext, { color: colors.textSecondary }]}>
+                  Payments recovered by reminders
+                </Text>
+              </View>
+              <Text style={[styles.proRoiAmount, { color: colors.statusPaid }]}>
+                {formatCurrency(stats?.collectedByAutoChase || 0, profile?.default_currency)}
+              </Text>
+            </LinearGradient>
           </Animated.View>
         )}
 
@@ -702,6 +812,50 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     fontVariant: ["tabular-nums"],
   },
+  // Money Status Hero Styles
+  moneyStatusRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  moneyStatusLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  moneyStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 10,
+  },
+  moneyStatusLabel: {
+    fontSize: 15,
+    fontWeight: "600",
+    letterSpacing: -0.2,
+  },
+  moneyStatusAmountLarge: {
+    fontSize: 36,
+    fontWeight: "800",
+    letterSpacing: -1,
+    fontVariant: ["tabular-nums"],
+  },
+  moneyStatusAmount: {
+    fontSize: 28,
+    fontWeight: "700",
+    letterSpacing: -0.8,
+    fontVariant: ["tabular-nums"],
+  },
+  moneyStatusAmountSmall: {
+    fontSize: 20,
+    fontWeight: "600",
+    letterSpacing: -0.4,
+    fontVariant: ["tabular-nums"],
+  },
+  moneyStatusDivider: {
+    height: 1,
+    marginVertical: 8,
+  },
   statusPillsRow: {
     flexDirection: "row",
     gap: 8,
@@ -756,6 +910,59 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "500",
     marginTop: 2,
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // DRAFTS SECTION
+  // ═══════════════════════════════════════════════════════════
+  draftsSection: {
+    marginHorizontal: CARD_MARGIN,
+    marginBottom: 24,
+  },
+  draftsCard: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  draftRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  draftInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  draftClient: {
+    fontSize: 16,
+    fontWeight: "600",
+    letterSpacing: -0.2,
+    marginBottom: 2,
+  },
+  draftAmount: {
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  draftCTA: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  draftCTAText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  sectionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
   },
 
   // ═══════════════════════════════════════════════════════════
@@ -849,6 +1056,59 @@ const styles = StyleSheet.create({
   quickStatLabel: {
     fontSize: 12,
     fontWeight: "500",
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // PRO ROI PROOF
+  // ═══════════════════════════════════════════════════════════
+  proRoiSection: {
+    marginTop: 16,
+    marginHorizontal: CARD_MARGIN,
+  },
+  proRoiCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  proRoiLeft: {
+    flex: 1,
+  },
+  proRoiBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 4,
+    marginBottom: 6,
+  },
+  proRoiBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  proRoiLabel: {
+    fontSize: 15,
+    fontWeight: "700",
+    letterSpacing: -0.2,
+    marginBottom: 2,
+  },
+  proRoiSubtext: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  proRoiAmount: {
+    fontSize: 24,
+    fontWeight: "800",
+    letterSpacing: -0.6,
+    fontVariant: ["tabular-nums"],
   },
 
   // ═══════════════════════════════════════════════════════════

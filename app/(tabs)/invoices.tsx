@@ -86,7 +86,7 @@ export default function InvoicesScreen() {
   const { invoices, isLoading, fetchInvoices, updateInvoice, setPendingInvoice } = useInvoiceStore();
   const { profile } = useProfileStore();
 
-  const [activeFilter, setActiveFilter] = useState<FilterType>("all");
+  const [activeFilter, setActiveFilter] = useState<FilterType>("unpaid");
   const [refreshing, setRefreshing] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
@@ -153,10 +153,35 @@ export default function InvoicesScreen() {
     }
   });
 
-  // Sort by date (newest first)
-  const sortedInvoices = [...filteredInvoices].sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  );
+  // Sort logic varies by filter
+  const sortedInvoices = [...filteredInvoices].sort((a, b) => {
+    if (activeFilter === "unpaid") {
+      // For unpaid filter: sort by most overdue first, then by due date
+      const now = new Date().getTime();
+      const aDueDate = a.due_date ? new Date(a.due_date).getTime() : now;
+      const bDueDate = b.due_date ? new Date(b.due_date).getTime() : now;
+      const aOverdueDays = a.status === "overdue" ? (now - aDueDate) : 0;
+      const bOverdueDays = b.status === "overdue" ? (now - bDueDate) : 0;
+
+      // Overdue invoices first, sorted by most overdue
+      if (aOverdueDays > 0 && bOverdueDays > 0) {
+        return bOverdueDays - aOverdueDays; // Most overdue first
+      }
+      if (aOverdueDays > 0) return -1; // a is overdue, b is not
+      if (bOverdueDays > 0) return 1; // b is overdue, a is not
+
+      // Non-overdue: sort by due date (closest first)
+      if (a.due_date && b.due_date) {
+        return aDueDate - bDueDate;
+      }
+
+      // Fallback to created date (newest first)
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+
+    // Default: sort by date (newest first)
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
 
   // Counts for segmented control
   const allCount = invoices.filter((i) => i.status !== "void").length;

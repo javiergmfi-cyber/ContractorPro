@@ -21,8 +21,12 @@ const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-// Platform fee percentage (1%)
-const PLATFORM_FEE_PERCENT = 0.01;
+// Platform fee: 0.5% of each transaction goes to platform
+// Implemented via Stripe Connect application_fee_amount
+// - Customer sees only the total (fee not itemized)
+// - Contractor receives payment minus Stripe fees minus platform fee
+// - Disclosed in Terms of Service
+const PLATFORM_FEE_PERCENT = 0.005;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {

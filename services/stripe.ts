@@ -84,7 +84,7 @@ export async function getStripeAccountStatus(): Promise<StripeAccountStatus> {
 }
 
 /**
- * Generate payment link for an invoice
+ * Generate payment link for an invoice (creates new Stripe session)
  */
 export async function generatePaymentLink(invoiceId: string): Promise<{
   paymentLinkUrl: string;
@@ -109,6 +109,50 @@ export async function generatePaymentLink(invoiceId: string): Promise<{
   } catch (error) {
     console.error("Error generating payment link:", error);
     throw error;
+  }
+}
+
+/**
+ * Get existing payment URL for an invoice (uses tracking URL)
+ * This reuses the same link for all states (deposit, balance, full)
+ * The customer page handles showing the right payment button
+ *
+ * IMPORTANT: This always returns the SAME link for an invoice.
+ * "One Job → One Thread → One Link" principle.
+ */
+export async function getPaymentLink(invoiceId: string): Promise<{ url: string } | null> {
+  try {
+    // First check if invoice already has a tracking URL
+    const { data: invoice, error } = await supabase
+      .from("invoices")
+      .select("tracking_id")
+      .eq("id", invoiceId)
+      .single();
+
+    if (error || !invoice?.tracking_id) {
+      // No tracking ID yet, generate a new payment link
+      const result = await generatePaymentLink(invoiceId);
+      return result ? { url: result.paymentLinkUrl } : null;
+    }
+
+    // Return the tracking URL - same link for all payment states
+    // @ts-ignore - EXPO_PUBLIC_SUPABASE_URL is set in .env
+    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+
+    if (!supabaseUrl) {
+      console.warn("EXPO_PUBLIC_SUPABASE_URL not set, falling back to generating new link");
+      const result = await generatePaymentLink(invoiceId);
+      return result ? { url: result.paymentLinkUrl } : null;
+    }
+
+    // The tracking URL points to the customer payment page
+    // which shows the appropriate button based on invoice state
+    const trackingUrl = `${supabaseUrl}/functions/v1/track-invoice-view?id=${invoice.tracking_id}`;
+
+    return { url: trackingUrl };
+  } catch (error) {
+    console.error("Error getting payment link:", error);
+    return null;
   }
 }
 

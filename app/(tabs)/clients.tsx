@@ -90,19 +90,34 @@ export default function ClientsScreen() {
     return () => breathe.stop();
   }, []);
 
-  // Calculate lifetime value and Trust Score (avg payment days) for each client
-  const clientsWithLTV = useMemo(() => {
+  // Calculate outstanding balance, LTV, Trust Score, and last invoice date for each client
+  const clientsWithStats = useMemo(() => {
     return clients.map((client) => {
-      const clientInvoices = invoices.filter(
-        (inv) =>
-          inv.client_name.toLowerCase() === client.name.toLowerCase() &&
-          inv.status === "paid"
+      // All invoices for this client
+      const allClientInvoices = invoices.filter(
+        (inv) => inv.client_name.toLowerCase() === client.name.toLowerCase()
       );
-      const totalSpent = clientInvoices.reduce((sum, inv) => sum + inv.total, 0);
+
+      // Paid invoices (for LTV)
+      const paidInvoices = allClientInvoices.filter((inv) => inv.status === "paid");
+      const totalSpent = paidInvoices.reduce((sum, inv) => sum + inv.total, 0);
+
+      // Unpaid invoices (for Outstanding Balance)
+      const unpaidInvoices = allClientInvoices.filter(
+        (inv) => inv.status === "sent" || inv.status === "overdue"
+      );
+      const outstandingBalance = unpaidInvoices.reduce((sum, inv) => sum + inv.total, 0);
+
+      // Last invoice date (most recent invoice created)
+      const lastInvoice = allClientInvoices.length > 0
+        ? allClientInvoices.sort((a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          )[0]
+        : null;
+      const lastInvoiceDate = lastInvoice?.created_at || null;
 
       // Calculate average payment days (Trust Score)
-      // Only consider invoices with both sent_at and paid_at
-      const invoicesWithPaymentData = clientInvoices.filter(
+      const invoicesWithPaymentData = paidInvoices.filter(
         (inv) => inv.sent_at && inv.paid_at
       );
 
@@ -117,14 +132,21 @@ export default function ClientsScreen() {
         avgPaymentDays = Math.round(totalDays / invoicesWithPaymentData.length);
       }
 
-      return { ...client, totalSpent, avgPaymentDays };
+      return { ...client, totalSpent, outstandingBalance, lastInvoiceDate, avgPaymentDays };
     });
   }, [clients, invoices]);
 
-  // Sort by LTV (highest first)
+  // Sort by Outstanding Balance first (who owes money), then by LTV
   const sortedClients = useMemo(() => {
-    return [...clientsWithLTV].sort((a, b) => b.totalSpent - a.totalSpent);
-  }, [clientsWithLTV]);
+    return [...clientsWithStats].sort((a, b) => {
+      // First sort by outstanding balance (highest first)
+      if (a.outstandingBalance !== b.outstandingBalance) {
+        return b.outstandingBalance - a.outstandingBalance;
+      }
+      // Then by LTV
+      return b.totalSpent - a.totalSpent;
+    });
+  }, [clientsWithStats]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -211,6 +233,13 @@ export default function ClientsScreen() {
     }).format(cents / 100);
   };
 
+  // Format date for last invoice display
+  const formatLastInvoiceDate = (dateString: string | null): string | null => {
+    if (!dateString) return null;
+    const date = new Date(dateString);
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
+
   // Trust Score helpers
   const getTrustScoreColor = (avgDays: number | null) => {
     if (avgDays === null) return colors.textTertiary;
@@ -233,11 +262,11 @@ export default function ClientsScreen() {
     return AlertTriangle; // Warning for slow payers
   };
 
-  const renderClientCard = ({ item, index }: { item: typeof clientsWithLTV[0]; index: number }) => {
+  const renderClientCard = ({ item, index }: { item: typeof clientsWithStats[0]; index: number }) => {
     const isTopClient = index === 0 && item.totalSpent > 0;
     const TrustIcon = getTrustScoreIcon(item.avgPaymentDays);
     const trustColor = getTrustScoreColor(item.avgPaymentDays);
-    const trustLabel = getTrustScoreLabel(item.avgPaymentDays);
+    const lastInvoiceFormatted = formatLastInvoiceDate(item.lastInvoiceDate);
 
     return (
       <Pressable
@@ -275,7 +304,24 @@ export default function ClientsScreen() {
             {item.name}
           </Text>
 
-          {/* Trust Score Badge */}
+          {/* Secondary info line: LTV + Last Invoice Date */}
+          <View style={styles.secondaryInfoRow}>
+            {item.totalSpent > 0 && (
+              <Text style={[styles.secondaryInfoText, { color: colors.textTertiary }]}>
+                LTV: {formatCurrency(item.totalSpent)}
+              </Text>
+            )}
+            {item.totalSpent > 0 && lastInvoiceFormatted && (
+              <Text style={[styles.secondaryInfoText, { color: colors.textTertiary }]}> • </Text>
+            )}
+            {lastInvoiceFormatted && (
+              <Text style={[styles.secondaryInfoText, { color: colors.textTertiary }]}>
+                Last: {lastInvoiceFormatted}
+              </Text>
+            )}
+          </View>
+
+          {/* Trust Score Badge (if has payment history) */}
           {item.avgPaymentDays !== null && TrustIcon && (
             <View style={styles.trustScoreRow}>
               <View
@@ -292,8 +338,8 @@ export default function ClientsScreen() {
             </View>
           )}
 
-          {/* Contact info (shown only if no trust score) */}
-          {item.avgPaymentDays === null && (item.email || item.phone) && (
+          {/* Contact info (shown only if no invoices yet) */}
+          {item.totalSpent === 0 && item.outstandingBalance === 0 && (item.email || item.phone) && (
             <View style={styles.contactRow}>
               {item.phone && (
                 <View style={styles.contactItem}>
@@ -318,12 +364,21 @@ export default function ClientsScreen() {
           )}
         </View>
 
-        {/* Lifetime Value */}
-        {item.totalSpent > 0 && (
-          <Text style={[styles.ltvText, { color: colors.primary }]}>
-            {formatCurrency(item.totalSpent)}
+        {/* Outstanding Balance (PRIMARY) - What they OWE NOW */}
+        {item.outstandingBalance > 0 ? (
+          <View style={styles.balanceContainer}>
+            <Text style={[styles.balanceLabel, { color: colors.textTertiary }]}>
+              Outstanding
+            </Text>
+            <Text style={[styles.balanceAmount, { color: colors.statusOverdue }]}>
+              {formatCurrency(item.outstandingBalance)}
+            </Text>
+          </View>
+        ) : item.totalSpent > 0 ? (
+          <Text style={[styles.paidLabel, { color: colors.statusPaid }]}>
+            Paid
           </Text>
-        )}
+        ) : null}
       </Pressable>
     );
   };
@@ -692,6 +747,35 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "600",
     letterSpacing: -0.2,
+  },
+  secondaryInfoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 2,
+  },
+  secondaryInfoText: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  balanceContainer: {
+    alignItems: "flex-end",
+  },
+  balanceLabel: {
+    fontSize: 10,
+    fontWeight: "500",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  balanceAmount: {
+    fontSize: 18,
+    fontWeight: "700",
+    letterSpacing: -0.3,
+    fontVariant: ["tabular-nums"],
+  },
+  paidLabel: {
+    fontSize: 14,
+    fontWeight: "600",
   },
   ltvText: {
     fontSize: 17,

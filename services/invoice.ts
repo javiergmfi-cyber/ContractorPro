@@ -47,29 +47,44 @@ export async function generateInvoicePDF(invoiceId: string): Promise<{ pdfUrl: s
  * 1. Generate PDF
  * 2. Generate payment link (if Stripe connected)
  * 3. Open native share sheet
+ *
+ * SEND-LIMIT BEHAVIOR:
+ * - "initial" sends count against the free tier limit (10/month)
+ * - "balance" sends do NOT count (PRO users only have deposits)
+ * - "reminder" sends do NOT count (handled by Auto-Chase)
+ *
+ * This ensures PRO users can freely collect balances without hitting limits,
+ * and the limit only applies to new invoice sends.
  */
 export async function sendInvoice(
   invoice: Invoice,
   options: {
     includePaymentLink?: boolean;
     shareMethod?: "native" | "sms" | "whatsapp" | "email";
+    messageType?: "initial" | "balance" | "reminder";
   } = {}
 ): Promise<SendInvoiceResult> {
-  const { includePaymentLink = true, shareMethod = "native" } = options;
+  const {
+    includePaymentLink = true,
+    shareMethod = "native",
+    messageType = "initial",
+  } = options;
 
   try {
     // 1. Generate PDF
     const pdfResult = await generateInvoicePDF(invoice.id);
 
-    // 2. Generate payment link if requested
+    // 2. Get payment link (reuses existing tracking URL)
+    // IMPORTANT: This always returns the SAME link for an invoice
+    // The customer payment page handles showing the right button
     let paymentUrl: string | undefined;
     if (includePaymentLink && invoice.status !== "paid") {
       const paymentResult = await getPaymentLink(invoice.id);
       paymentUrl = paymentResult?.url;
     }
 
-    // 3. Construct message
-    const message = constructInvoiceMessage(invoice, paymentUrl);
+    // 3. Construct message based on type
+    const message = constructInvoiceMessage(invoice, paymentUrl, messageType);
 
     // 4. Share via selected method
     switch (shareMethod) {
@@ -106,15 +121,52 @@ export async function sendInvoice(
 /**
  * Construct the invoice message for sharing
  * Highlights ease of payment for professional appearance
+ *
+ * Supports different message types:
+ * - "initial": First time sending the invoice
+ * - "balance": Collecting remaining balance after deposit
+ * - "reminder": Follow-up reminder
  */
-function constructInvoiceMessage(invoice: Invoice, paymentUrl?: string): string {
-  const amount = formatCurrency(invoice.total, invoice.currency);
+function constructInvoiceMessage(
+  invoice: Invoice,
+  paymentUrl?: string,
+  messageType: "initial" | "balance" | "reminder" = "initial"
+): string {
+  const firstName = invoice.client_name.split(" ")[0];
+  const totalAmount = formatCurrency(invoice.total, invoice.currency);
+  const amountPaid = invoice.amount_paid || 0;
+  const remainingAmount = formatCurrency(invoice.total - amountPaid, invoice.currency);
 
-  let message = `Hi ${invoice.client_name.split(" ")[0]},\n\n`;
-  message += `Here is your invoice for ${amount}.\n\n`;
-  message += `You can pay securely via Apple Pay, Google Pay, or Card here:\n`;
-  message += `${paymentUrl}\n\n`;
-  message += `Thank you for your business!`;
+  let message = "";
+
+  switch (messageType) {
+    case "balance":
+      // Message for collecting remaining balance after deposit
+      message = `Hi ${firstName},\n\n`;
+      message += `Thanks for the deposit! The remaining balance of ${remainingAmount} is now due.\n\n`;
+      message += `Pay securely here:\n${paymentUrl}\n\n`;
+      message += `Thank you!`;
+      break;
+
+    case "reminder":
+      // Reminder message (handled by generateReminderMessage)
+      message = constructInvoiceMessage(invoice, paymentUrl, "initial");
+      break;
+
+    default:
+      // Initial send message
+      message = `Hi ${firstName},\n\n`;
+      if (invoice.deposit_enabled && invoice.deposit_amount) {
+        const depositAmount = formatCurrency(invoice.deposit_amount, invoice.currency);
+        message += `Here is your estimate for ${totalAmount}.\n`;
+        message += `A ${depositAmount} deposit is requested to get started.\n\n`;
+      } else {
+        message += `Here is your invoice for ${totalAmount}.\n\n`;
+      }
+      message += `You can pay securely via Apple Pay, Google Pay, or Card here:\n`;
+      message += `${paymentUrl}\n\n`;
+      message += `Thank you for your business!`;
+  }
 
   return message;
 }

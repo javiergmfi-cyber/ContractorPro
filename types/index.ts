@@ -42,10 +42,16 @@ export interface AIParseResult {
 // Dashboard statistics
 export interface DashboardStats {
   totalRevenue: number; // in cents
-  pendingAmount: number; // in cents
+  pendingAmount: number; // in cents - all unpaid (sent + overdue)
+  overdueAmount: number; // in cents - only overdue
+  paidThisWeek: number; // in cents - paid in last 7 days
   invoiceCount: number;
   paidCount: number;
   overdueCount: number;
+  // PRO ROI stats
+  collectedByAutoChase: number; // in cents - paid invoices that had auto-chase reminders
+  totalClientsCount?: number;
+  totalInvoicesCount?: number;
 }
 
 // Stripe account status
@@ -96,4 +102,67 @@ export const formatRelativeDate = (dateString: string): string => {
     day: "numeric",
     year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
   }).format(date);
+};
+
+/**
+ * Calculate remaining balance for an invoice
+ * Single source of truth for balance calculation
+ * Use this everywhere instead of calculating manually
+ *
+ * @param total - Total invoice amount in cents
+ * @param amountPaid - Amount already paid in cents (default 0)
+ * @returns Remaining balance in cents (never negative)
+ */
+export const getRemainingBalance = (total: number, amountPaid: number = 0): number => {
+  return Math.max(0, total - (amountPaid || 0));
+};
+
+/**
+ * Check if an invoice has a deposit and it's been paid
+ * @param invoice - Invoice object with deposit fields
+ * @returns true if deposit is enabled and has been paid
+ */
+export const isDepositPaid = (invoice: {
+  deposit_enabled?: boolean;
+  deposit_amount?: number | null;
+  amount_paid?: number | null;
+  deposit_paid_at?: string | null;
+}): boolean => {
+  if (!invoice.deposit_enabled || !invoice.deposit_amount) {
+    return false;
+  }
+  // Deposit is paid if deposit_paid_at is set OR amount_paid >= deposit_amount
+  return !!(invoice.deposit_paid_at || (invoice.amount_paid || 0) >= invoice.deposit_amount);
+};
+
+/**
+ * Get the payment state for an invoice
+ * Used to determine what UI/actions to show
+ */
+export type PaymentState = "draft" | "no_deposit" | "deposit_pending" | "deposit_paid" | "fully_paid" | "void";
+
+export const getPaymentState = (invoice: {
+  status: string;
+  total: number;
+  deposit_enabled?: boolean;
+  deposit_amount?: number | null;
+  amount_paid?: number | null;
+  deposit_paid_at?: string | null;
+}): PaymentState => {
+  if (invoice.status === "void") return "void";
+  if (invoice.status === "draft") return "draft";
+  if (invoice.status === "paid" || getRemainingBalance(invoice.total, invoice.amount_paid || 0) === 0) {
+    return "fully_paid";
+  }
+
+  if (!invoice.deposit_enabled || !invoice.deposit_amount) {
+    return "no_deposit";
+  }
+
+  // Deposit is enabled
+  if (isDepositPaid(invoice)) {
+    return "deposit_paid";
+  }
+
+  return "deposit_pending";
 };
