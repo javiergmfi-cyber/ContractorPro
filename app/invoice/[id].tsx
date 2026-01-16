@@ -539,6 +539,26 @@ export default function InvoiceDetail() {
               {invoice.status.toUpperCase()}
             </Text>
           </Animated.View>
+
+          {/* Approved but deposit not paid indicator */}
+          {invoice.approved_at && !invoice.deposit_paid_at && invoice.deposit_enabled && (
+            <View
+              style={[
+                styles.approvedIndicator,
+                { backgroundColor: colors.systemOrange + "15", marginTop: spacing.xs },
+              ]}
+            >
+              <CheckCircle size={12} color={colors.systemOrange} />
+              <Text
+                style={[
+                  typography.caption1,
+                  { color: colors.systemOrange, fontWeight: "600", marginLeft: 4 },
+                ]}
+              >
+                Approved • Deposit not paid yet
+              </Text>
+            </View>
+          )}
         </Animated.View>
 
         {/* Invoice Number (visible when large title fades) */}
@@ -773,7 +793,27 @@ export default function InvoiceDetail() {
           />
         )}
 
-        {invoice.status === "sent" && (
+        {/* Approved but deposit not paid - special CTA (PRO) */}
+        {invoice.status === "sent" && invoice.approved_at && invoice.deposit_enabled && !invoice.deposit_paid_at && (
+          <View style={styles.actionRow}>
+            <View style={[styles.approvedInfoBanner, { backgroundColor: colors.systemOrange + "15" }]}>
+              <CheckCircle size={14} color={colors.systemOrange} />
+              <Text style={[typography.caption1, { color: colors.systemOrange, marginLeft: 4 }]}>
+                Approved
+              </Text>
+            </View>
+            <View style={{ flex: 1, marginLeft: spacing.sm }}>
+              <Button
+                title={`Request Deposit ${formatCurrency(invoice.deposit_amount || 0, invoice.currency)}`}
+                onPress={handleSendInvoice}
+                variant="primary"
+              />
+            </View>
+          </View>
+        )}
+
+        {/* Regular sent state (not approved-waiting-for-deposit) */}
+        {invoice.status === "sent" && !(invoice.approved_at && invoice.deposit_enabled && !invoice.deposit_paid_at) && (
           <View style={styles.actionRow}>
             <Pressable
               onPress={handleSendInvoice}
@@ -898,6 +938,13 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 16,
   },
+  approvedIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
   datesRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -983,6 +1030,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   depositInfoBanner: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  approvedInfoBanner: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 12,
