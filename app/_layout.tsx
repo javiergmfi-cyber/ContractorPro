@@ -6,6 +6,8 @@ import { View, ActivityIndicator } from "react-native";
 import { ThemeProvider, useTheme } from "../lib/theme";
 import { AuthProvider, useAuth } from "../contexts/AuthContext";
 import { PreflightModal } from "../components/PreflightModal";
+import { ErrorRecoveryOverlay } from "../components/ErrorRecoveryOverlay";
+import { useErrorStore } from "../store/useErrorStore";
 import { useNotifications } from "../hooks/useNotifications";
 import "../global.css";
 
@@ -42,6 +44,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
 function RootLayoutContent() {
   const { isDark, colors } = useTheme();
+  const { isVisible, errorType, errorMessage, retryCallback, hideError } = useErrorStore();
 
   // Initialize push notifications
   useNotifications();
@@ -92,6 +95,15 @@ function RootLayoutContent() {
 
       {/* Pre-Flight Check Modal - Global overlay */}
       <PreflightModal />
+
+      {/* Error Recovery Overlay - Global guided error handling */}
+      <ErrorRecoveryOverlay
+        visible={isVisible}
+        errorType={errorType}
+        errorMessage={errorMessage || undefined}
+        onDismiss={hideError}
+        onRetry={retryCallback || undefined}
+      />
     </>
   );
 }

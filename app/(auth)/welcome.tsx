@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -6,81 +6,284 @@ import {
   Pressable,
   Dimensions,
   Animated,
+  Easing,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { Mic, Send, Check } from "lucide-react-native";
+import { Mic, Send, Check, DollarSign, Zap } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/lib/theme";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 /**
- * Welcome Screen - Cinematic Onboarding
+ * Welcome Screen - Cinematic Onboarding (Enhanced)
  *
  * A premium first impression with:
- * - Animated shifting gradient background
- * - Three dramatic slides: Speak. Send. Paid.
- * - Tap to advance with heavy haptics
- * - Final CTA buttons
+ * - Particle system background
+ * - Letter-by-letter text reveal
+ * - Morphing icon transitions
+ * - Pulsing glow effects
+ * - Staggered button animations
+ * - Haptic choreography
  */
 
 interface Slide {
   text: string;
-  icon: React.ReactNode;
+  subtext: string;
+  icon: React.ComponentType<any>;
   color: string;
+}
+
+// Floating particle component
+function FloatingParticle({
+  delay,
+  startX,
+  startY,
+  colors,
+}: {
+  delay: number;
+  startX: number;
+  startY: number;
+  colors: any;
+}) {
+  const translateY = useRef(new Animated.Value(0)).current;
+  const translateX = useRef(new Animated.Value(0)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+  const scale = useRef(new Animated.Value(0.5)).current;
+
+  useEffect(() => {
+    const animate = () => {
+      // Reset
+      translateY.setValue(0);
+      translateX.setValue(0);
+      opacity.setValue(0);
+      scale.setValue(0.5);
+
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.parallel([
+          // Float up
+          Animated.timing(translateY, {
+            toValue: -SCREEN_HEIGHT * 0.4,
+            duration: 4000 + Math.random() * 2000,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }),
+          // Drift sideways
+          Animated.timing(translateX, {
+            toValue: (Math.random() - 0.5) * 100,
+            duration: 4000 + Math.random() * 2000,
+            useNativeDriver: true,
+          }),
+          // Fade in then out
+          Animated.sequence([
+            Animated.timing(opacity, {
+              toValue: 0.6,
+              duration: 1000,
+              useNativeDriver: true,
+            }),
+            Animated.delay(2000),
+            Animated.timing(opacity, {
+              toValue: 0,
+              duration: 1000,
+              useNativeDriver: true,
+            }),
+          ]),
+          // Scale up slightly
+          Animated.timing(scale, {
+            toValue: 1,
+            duration: 4000,
+            useNativeDriver: true,
+          }),
+        ]),
+      ]).start(() => animate());
+    };
+
+    animate();
+  }, []);
+
+  return (
+    <Animated.View
+      style={[
+        styles.particle,
+        {
+          left: startX,
+          top: startY,
+          backgroundColor: colors.primary,
+          opacity,
+          transform: [{ translateY }, { translateX }, { scale }],
+        },
+      ]}
+    />
+  );
 }
 
 export default function WelcomeScreen() {
   const router = useRouter();
   const { colors, isDark } = useTheme();
   const [currentSlide, setCurrentSlide] = useState(0);
+  const [displayedText, setDisplayedText] = useState("");
 
   // Animation values
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
-  const gradientAnim = useRef(new Animated.Value(0)).current;
+  const iconScale = useRef(new Animated.Value(0)).current;
+  const iconRotate = useRef(new Animated.Value(0)).current;
+  const glowPulse = useRef(new Animated.Value(0.3)).current;
+  const subtextOpacity = useRef(new Animated.Value(0)).current;
   const buttonAnim = useRef(new Animated.Value(0)).current;
+  const logoFloat = useRef(new Animated.Value(0)).current;
+
+  // Letter animations for text reveal
+  const letterAnimations = useRef<Animated.Value[]>([]).current;
 
   // Slides configuration
   const slides: Slide[] = [
     {
       text: "Speak.",
-      icon: <Mic size={64} color={colors.text} strokeWidth={1.5} />,
+      subtext: "Just say what you did",
+      icon: Mic,
       color: colors.primary,
     },
     {
       text: "Send.",
-      icon: <Send size={64} color={colors.text} strokeWidth={1.5} />,
+      subtext: "Professional invoice, instantly",
+      icon: Send,
       color: colors.statusSent,
     },
     {
       text: "Paid.",
-      icon: <Check size={64} color={colors.statusPaid} strokeWidth={2} />,
+      subtext: "Get paid faster than ever",
+      icon: DollarSign,
       color: colors.statusPaid,
     },
   ];
 
   const isLastSlide = currentSlide === slides.length - 1;
+  const currentSlideData = slides[currentSlide];
+  const IconComponent = currentSlideData.icon;
 
-  // Animate gradient continuously
+  // Initialize letter animations for current text
   useEffect(() => {
-    const animateGradient = Animated.loop(
+    const text = currentSlideData.text;
+    letterAnimations.length = 0;
+    for (let i = 0; i < text.length; i++) {
+      letterAnimations.push(new Animated.Value(0));
+    }
+  }, [currentSlide]);
+
+  // Animate text letter by letter
+  const animateTextReveal = useCallback(() => {
+    const text = currentSlideData.text;
+    setDisplayedText("");
+
+    // Reset letter animations
+    letterAnimations.forEach((anim) => anim.setValue(0));
+
+    // Stagger letter reveals
+    const letterDelay = 80;
+    text.split("").forEach((letter, index) => {
+      setTimeout(() => {
+        setDisplayedText((prev) => prev + letter);
+        if (letterAnimations[index]) {
+          Animated.spring(letterAnimations[index], {
+            toValue: 1,
+            damping: 12,
+            stiffness: 200,
+            useNativeDriver: true,
+          }).start();
+        }
+        // Haptic on each letter
+        if (index < text.length - 1) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        } else {
+          // Heavy haptic on last letter (the period)
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+        }
+      }, index * letterDelay);
+    });
+
+    // Show subtext after text is revealed
+    setTimeout(() => {
+      Animated.spring(subtextOpacity, {
+        toValue: 1,
+        damping: 15,
+        stiffness: 150,
+        useNativeDriver: true,
+      }).start();
+    }, text.length * letterDelay + 200);
+  }, [currentSlide, currentSlideData.text]);
+
+  // Animate icon entrance
+  const animateIconEntrance = useCallback(() => {
+    iconScale.setValue(0);
+    iconRotate.setValue(0);
+
+    Animated.parallel([
+      Animated.spring(iconScale, {
+        toValue: 1,
+        damping: 10,
+        stiffness: 150,
+        useNativeDriver: true,
+      }),
+      Animated.timing(iconRotate, {
+        toValue: 1,
+        duration: 600,
+        easing: Easing.out(Easing.back(1.5)),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  // Pulsing glow effect
+  useEffect(() => {
+    const pulseAnimation = Animated.loop(
       Animated.sequence([
-        Animated.timing(gradientAnim, {
-          toValue: 1,
-          duration: 4000,
-          useNativeDriver: false,
+        Animated.timing(glowPulse, {
+          toValue: 0.6,
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
         }),
-        Animated.timing(gradientAnim, {
-          toValue: 0,
-          duration: 4000,
-          useNativeDriver: false,
+        Animated.timing(glowPulse, {
+          toValue: 0.3,
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
         }),
       ])
     );
-    animateGradient.start();
-    return () => animateGradient.stop();
+    pulseAnimation.start();
+    return () => pulseAnimation.stop();
+  }, []);
+
+  // Floating logo animation
+  useEffect(() => {
+    const floatAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(logoFloat, {
+          toValue: 1,
+          duration: 2000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(logoFloat, {
+          toValue: 0,
+          duration: 2000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    floatAnimation.start();
+    return () => floatAnimation.stop();
+  }, []);
+
+  // Initial animation on mount
+  useEffect(() => {
+    animateIconEntrance();
+    animateTextReveal();
   }, []);
 
   // Show buttons on last slide
@@ -88,9 +291,9 @@ export default function WelcomeScreen() {
     if (isLastSlide) {
       Animated.spring(buttonAnim, {
         toValue: 1,
-        damping: 15,
-        stiffness: 150,
-        delay: 400,
+        damping: 12,
+        stiffness: 120,
+        delay: 600,
         useNativeDriver: true,
       }).start();
     } else {
@@ -101,44 +304,46 @@ export default function WelcomeScreen() {
   const handleTap = () => {
     if (isLastSlide) return;
 
-    // Heavy haptic feedback
+    // Heavy haptic for transition
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
-    // Animate out
+    // Reset subtext
+    subtextOpacity.setValue(0);
+
+    // Animate out with morph effect
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 0,
-        duration: 150,
+        duration: 200,
         useNativeDriver: true,
       }),
       Animated.timing(scaleAnim, {
-        toValue: 0.9,
-        duration: 150,
+        toValue: 0.8,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(iconScale, {
+        toValue: 1.2,
+        duration: 200,
         useNativeDriver: true,
       }),
     ]).start(() => {
       // Change slide
       setCurrentSlide((prev) => prev + 1);
+      setDisplayedText("");
 
-      // Animate in
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-        Animated.spring(scaleAnim, {
-          toValue: 1,
-          damping: 12,
-          stiffness: 200,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      // Reset animations
+      fadeAnim.setValue(1);
+      scaleAnim.setValue(1);
+
+      // Animate new content in
+      animateIconEntrance();
+      animateTextReveal();
     });
   };
 
   const handleGetStarted = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     router.replace("/signup");
   };
 
@@ -147,37 +352,61 @@ export default function WelcomeScreen() {
     router.replace("/login");
   };
 
-  // Interpolate gradient colors
-  const gradientStart = gradientAnim.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [
-      isDark ? "#0A0A0A" : "#FFFFFF",
-      isDark ? "#0D1F0D" : "#E8F5E8",
-      isDark ? "#0A0A0A" : "#FFFFFF",
-    ],
+  // Generate particles
+  const particles = useRef(
+    Array.from({ length: 12 }, (_, i) => ({
+      id: i,
+      startX: Math.random() * SCREEN_WIDTH,
+      startY: SCREEN_HEIGHT * 0.6 + Math.random() * SCREEN_HEIGHT * 0.3,
+      delay: i * 400,
+    }))
+  ).current;
+
+  const iconRotation = iconRotate.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["-15deg", "0deg"],
   });
 
-  const gradientEnd = gradientAnim.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [
-      isDark ? "#0D1A0D" : "#F0FFF0",
-      isDark ? "#001A00" : "#D0F0D0",
-      isDark ? "#0D1A0D" : "#F0FFF0",
-    ],
+  const floatTranslate = logoFloat.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -10],
   });
-
-  const currentSlideData = slides[currentSlide];
 
   return (
     <View style={styles.container}>
-      {/* Animated Gradient Background */}
-      <Animated.View style={StyleSheet.absoluteFill}>
-        <AnimatedGradient
-          gradientStart={gradientStart}
-          gradientEnd={gradientEnd}
-          accentColor={currentSlideData.color}
+      {/* Gradient Background */}
+      <LinearGradient
+        colors={
+          isDark
+            ? ["#0A0A0A", "#0D1A0D", "#001A00"]
+            : ["#FFFFFF", "#F5FFF5", "#E8FFE8"]
+        }
+        locations={[0, 0.5, 1]}
+        style={StyleSheet.absoluteFill}
+      />
+
+      {/* Particle System */}
+      {particles.map((particle) => (
+        <FloatingParticle
+          key={particle.id}
+          delay={particle.delay}
+          startX={particle.startX}
+          startY={particle.startY}
+          colors={colors}
         />
-      </Animated.View>
+      ))}
+
+      {/* Accent Glow */}
+      <Animated.View
+        style={[
+          styles.accentGlow,
+          {
+            backgroundColor: currentSlideData.color,
+            shadowColor: currentSlideData.color,
+            opacity: glowPulse,
+          },
+        ]}
+      />
 
       {/* Tap Area */}
       <Pressable
@@ -195,44 +424,122 @@ export default function WelcomeScreen() {
             },
           ]}
         >
-          {/* Icon */}
-          <View style={styles.iconContainer}>{currentSlideData.icon}</View>
-
-          {/* Text */}
-          <Text
+          {/* Animated Icon */}
+          <Animated.View
             style={[
-              styles.heroText,
+              styles.iconContainer,
               {
-                color: isLastSlide ? colors.statusPaid : colors.text,
+                backgroundColor: currentSlideData.color + "15",
+                borderColor: currentSlideData.color + "30",
+                transform: [
+                  { scale: iconScale },
+                  { rotate: iconRotation },
+                  { translateY: floatTranslate },
+                ],
               },
             ]}
           >
-            {currentSlideData.text}
-          </Text>
+            {/* Icon Glow Ring */}
+            <Animated.View
+              style={[
+                styles.iconGlowRing,
+                {
+                  borderColor: currentSlideData.color,
+                  opacity: glowPulse,
+                  transform: [{ scale: glowPulse.interpolate({
+                    inputRange: [0.3, 0.6],
+                    outputRange: [1, 1.2],
+                  }) }],
+                },
+              ]}
+            />
+            <IconComponent
+              size={64}
+              color={isLastSlide ? colors.statusPaid : colors.text}
+              strokeWidth={1.5}
+            />
+          </Animated.View>
+
+          {/* Letter-by-letter Text */}
+          <View style={styles.textContainer}>
+            <Text
+              style={[
+                styles.heroText,
+                { color: isLastSlide ? colors.statusPaid : colors.text },
+              ]}
+            >
+              {displayedText.split("").map((letter, index) => (
+                <Animated.Text
+                  key={index}
+                  style={{
+                    opacity: letterAnimations[index] || 1,
+                    transform: [
+                      {
+                        translateY: letterAnimations[index]
+                          ? letterAnimations[index].interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [20, 0],
+                            })
+                          : 0,
+                      },
+                    ],
+                  }}
+                >
+                  {letter}
+                </Animated.Text>
+              ))}
+            </Text>
+          </View>
+
+          {/* Subtext */}
+          <Animated.Text
+            style={[
+              styles.subtext,
+              {
+                color: colors.textSecondary,
+                opacity: subtextOpacity,
+                transform: [
+                  {
+                    translateY: subtextOpacity.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [10, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            {currentSlideData.subtext}
+          </Animated.Text>
 
           {/* Tap hint (not on last slide) */}
           {!isLastSlide && (
-            <Animated.Text
-              style={[styles.tapHint, { color: colors.textTertiary }]}
-            >
-              Tap to continue
-            </Animated.Text>
+            <Animated.View style={styles.tapHintContainer}>
+              <View style={[styles.tapHintPill, { backgroundColor: colors.backgroundSecondary }]}>
+                <Zap size={14} color={colors.primary} />
+                <Text style={[styles.tapHint, { color: colors.textTertiary }]}>
+                  Tap to continue
+                </Text>
+              </View>
+            </Animated.View>
           )}
         </Animated.View>
 
         {/* Progress Dots */}
         <View style={styles.dotsContainer}>
-          {slides.map((_, index) => (
-            <View
+          {slides.map((slide, index) => (
+            <Animated.View
               key={index}
               style={[
                 styles.dot,
                 {
                   backgroundColor:
-                    index === currentSlide
-                      ? colors.primary
-                      : colors.textTertiary,
-                  width: index === currentSlide ? 24 : 8,
+                    index === currentSlide ? slide.color : colors.textTertiary + "40",
+                  width: index === currentSlide ? 28 : 8,
+                  shadowColor: index === currentSlide ? slide.color : "transparent",
+                  shadowOpacity: index === currentSlide ? 0.5 : 0,
+                  shadowRadius: 8,
+                  elevation: index === currentSlide ? 5 : 0,
                 },
               ]}
             />
@@ -251,14 +558,14 @@ export default function WelcomeScreen() {
                 {
                   translateY: buttonAnim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [50, 0],
+                    outputRange: [60, 0],
                   }),
                 },
               ],
             },
           ]}
         >
-          {/* Primary CTA */}
+          {/* Primary CTA with gradient */}
           <Pressable
             style={({ pressed }) => [
               styles.primaryButton,
@@ -266,13 +573,21 @@ export default function WelcomeScreen() {
             ]}
             onPress={handleGetStarted}
           >
-            <Text style={styles.primaryButtonText}>Get Started</Text>
+            <LinearGradient
+              colors={["#00D632", "#00B82B"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.primaryButtonGradient}
+            >
+              <Text style={styles.primaryButtonText}>Get Started Free</Text>
+            </LinearGradient>
           </Pressable>
 
           {/* Secondary CTA */}
           <Pressable
             style={({ pressed }) => [
               styles.secondaryButton,
+              { borderColor: colors.border },
               pressed && styles.buttonPressed,
             ]}
             onPress={handleLogin}
@@ -281,49 +596,16 @@ export default function WelcomeScreen() {
               I have an account
             </Text>
           </Pressable>
+
+          {/* Trust badges */}
+          <View style={styles.trustBadges}>
+            <Text style={[styles.trustText, { color: colors.textTertiary }]}>
+              Free to start • No credit card required
+            </Text>
+          </View>
         </Animated.View>
       )}
     </View>
-  );
-}
-
-// Animated Gradient Component
-interface AnimatedGradientProps {
-  gradientStart: Animated.AnimatedInterpolation<string>;
-  gradientEnd: Animated.AnimatedInterpolation<string>;
-  accentColor: string;
-}
-
-function AnimatedGradient({
-  gradientStart,
-  gradientEnd,
-  accentColor,
-}: AnimatedGradientProps) {
-  const { isDark } = useTheme();
-
-  // For now, use static gradient since LinearGradient doesn't support animated colors directly
-  // The animated value changes will trigger re-renders with new interpolated colors
-  return (
-    <LinearGradient
-      colors={[
-        isDark ? "#0A0A0A" : "#FFFFFF",
-        isDark ? "#0D1A0D" : "#F5FFF5",
-        isDark ? "#001A00" : "#E8FFE8",
-      ]}
-      locations={[0, 0.5, 1]}
-      style={StyleSheet.absoluteFill}
-    >
-      {/* Accent Glow */}
-      <View
-        style={[
-          styles.accentGlow,
-          {
-            backgroundColor: accentColor,
-            shadowColor: accentColor,
-          },
-        ]}
-      />
-    </LinearGradient>
   );
 }
 
@@ -342,64 +624,88 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
   },
   iconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    width: 140,
+    height: 140,
+    borderRadius: 70,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 32,
-    // Glass effect
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
+    marginBottom: 40,
+    borderWidth: 2,
+  },
+  iconGlowRing: {
+    position: "absolute",
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    borderWidth: 2,
+  },
+  textContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
   },
   heroText: {
-    fontSize: 48,
+    fontSize: 56,
     fontWeight: "900",
-    letterSpacing: -1.5,
+    letterSpacing: -2,
     textAlign: "center",
   },
-  tapHint: {
-    fontSize: 15,
+  subtext: {
+    fontSize: 17,
     fontWeight: "500",
-    marginTop: 24,
+    marginTop: 12,
     letterSpacing: -0.3,
+  },
+  tapHintContainer: {
+    marginTop: 48,
+  },
+  tapHintPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 100,
+    gap: 8,
+  },
+  tapHint: {
+    fontSize: 14,
+    fontWeight: "600",
+    letterSpacing: -0.2,
   },
   dotsContainer: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 10,
     position: "absolute",
-    bottom: 200,
+    bottom: 220,
   },
   dot: {
     height: 8,
     borderRadius: 4,
-    transition: "width 0.3s",
   },
   buttonContainer: {
     position: "absolute",
-    bottom: 60,
+    bottom: 50,
     left: 24,
     right: 24,
     gap: 12,
   },
   primaryButton: {
-    backgroundColor: "#FFFFFF",
-    paddingVertical: 18,
     borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    // Shadow
-    shadowColor: "#000",
+    overflow: "hidden",
+    shadowColor: "#00D632",
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 24,
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
     elevation: 10,
   },
+  primaryButtonGradient: {
+    paddingVertical: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   primaryButtonText: {
-    color: "#000000",
+    color: "#FFFFFF",
     fontSize: 17,
     fontWeight: "700",
     letterSpacing: -0.4,
@@ -410,6 +716,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 1,
   },
   secondaryButtonText: {
     fontSize: 17,
@@ -420,17 +727,29 @@ const styles = StyleSheet.create({
     opacity: 0.8,
     transform: [{ scale: 0.98 }],
   },
+  trustBadges: {
+    alignItems: "center",
+    marginTop: 8,
+  },
+  trustText: {
+    fontSize: 13,
+    fontWeight: "500",
+  },
   accentGlow: {
     position: "absolute",
-    top: SCREEN_HEIGHT * 0.3,
-    left: SCREEN_WIDTH * 0.2,
-    width: SCREEN_WIDTH * 0.6,
-    height: SCREEN_WIDTH * 0.6,
-    borderRadius: SCREEN_WIDTH * 0.3,
-    opacity: 0.15,
-    // Blur effect via shadow
+    top: SCREEN_HEIGHT * 0.25,
+    left: SCREEN_WIDTH * 0.15,
+    width: SCREEN_WIDTH * 0.7,
+    height: SCREEN_WIDTH * 0.7,
+    borderRadius: SCREEN_WIDTH * 0.35,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1,
-    shadowRadius: 100,
+    shadowRadius: 120,
+  },
+  particle: {
+    position: "absolute",
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
 });
