@@ -1,13 +1,17 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { View, ActivityIndicator } from "react-native";
+import { View, ActivityIndicator, Alert } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ThemeProvider, useTheme } from "../lib/theme";
 import { AuthProvider, useAuth } from "../contexts/AuthContext";
 import { PreflightModal } from "../components/PreflightModal";
 import { ErrorRecoveryOverlay } from "../components/ErrorRecoveryOverlay";
+import { AnimatedSplash } from "../components/AnimatedSplash";
+import { FirstTimeTutorial } from "../components/tutorial/FirstTimeTutorial";
 import { useErrorStore } from "../store/useErrorStore";
+import { useTutorialStore, CURRENT_TUTORIAL_VERSION } from "../store/useTutorialStore";
 import { useNotifications } from "../hooks/useNotifications";
 import "../global.css";
 
@@ -44,14 +48,45 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
 function RootLayoutContent() {
   const { isDark, colors } = useTheme();
+  const { session, user } = useAuth();
   const { isVisible, errorType, errorMessage, retryCallback, hideError } = useErrorStore();
+  const { hasHydrated, getTutorialVersionSeen } = useTutorialStore();
+  const [showSplash, setShowSplash] = useState(true);
+  const [showTutorial, setShowTutorial] = useState(false);
 
   // Initialize push notifications
   useNotifications();
 
+  const handleSplashComplete = () => {
+    setShowSplash(false);
+  };
+
+  // Determine if tutorial should show
+  // Only show when: hydrated + logged in + hasn't seen current version + splash done
+  useEffect(() => {
+    if (
+      hasHydrated &&
+      session &&
+      user &&
+      !showSplash &&
+      getTutorialVersionSeen(user.id) < CURRENT_TUTORIAL_VERSION
+    ) {
+      setShowTutorial(true);
+    }
+  }, [hasHydrated, session, user, showSplash]);
+
+  const handleTutorialComplete = () => {
+    setShowTutorial(false);
+  };
+
+  const handleTutorialSkip = () => {
+    setShowTutorial(false);
+    // Toast would be shown from within the tutorial component
+  };
+
   return (
     <>
-      <StatusBar style={isDark ? "light" : "dark"} />
+      <StatusBar style={showSplash || showTutorial ? "light" : isDark ? "light" : "dark"} />
       <AuthGuard>
         <Stack
           screenOptions={{
@@ -104,18 +139,32 @@ function RootLayoutContent() {
         onDismiss={hideError}
         onRetry={retryCallback || undefined}
       />
+
+      {/* First-Time User Tutorial - Benefits-first onboarding */}
+      {showTutorial && user && (
+        <FirstTimeTutorial
+          userId={user.id}
+          onComplete={handleTutorialComplete}
+          onSkip={handleTutorialSkip}
+        />
+      )}
+
+      {/* Animated Splash Screen - Apple-level launch experience */}
+      {showSplash && <AnimatedSplash onComplete={handleSplashComplete} />}
     </>
   );
 }
 
 export default function RootLayout() {
   return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        <AuthProvider>
-          <RootLayoutContent />
-        </AuthProvider>
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <RootLayoutContent />
+          </AuthProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

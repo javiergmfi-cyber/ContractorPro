@@ -46,9 +46,14 @@ export function useNotifications() {
 
     return () => {
       if (notificationResponseListener.current) {
-        Notifications.removeNotificationSubscription(
-          notificationResponseListener.current
-        );
+        // Safety check for Expo Go compatibility
+        if (typeof Notifications.removeNotificationSubscription === "function") {
+          Notifications.removeNotificationSubscription(
+            notificationResponseListener.current
+          );
+        } else {
+          notificationResponseListener.current.remove?.();
+        }
       }
     };
   }, []);

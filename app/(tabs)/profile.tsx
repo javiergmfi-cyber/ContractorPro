@@ -41,6 +41,7 @@ import {
   Grid3x3,
   Eye,
   Banknote,
+  RotateCcw,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
@@ -49,6 +50,8 @@ import { useProfileStore } from "@/store/useProfileStore";
 import { useReminderStore } from "@/store/useReminderStore";
 import { useOfflineStore } from "@/store/useOfflineStore";
 import { useSubscriptionStore } from "@/store/useSubscriptionStore";
+import { useTutorialStore } from "@/store/useTutorialStore";
+import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/Button";
 
@@ -73,7 +76,9 @@ const TRADES = [
 export default function Profile() {
   const router = useRouter();
   const { colors, typography, spacing, radius, isDark } = useTheme();
+  const { user } = useAuth();
   const { profile, updateProfile, fetchProfile, isSaving } = useProfileStore();
+  const { resetTutorial } = useTutorialStore();
   const {
     settings: reminderSettings,
     fetchSettings: fetchReminderSettings,
@@ -253,6 +258,15 @@ export default function Profile() {
       }
     } catch (error) {
       Alert.alert("Sync Failed", "Failed to sync data");
+    }
+  };
+
+  const handleReplayTutorial = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (user) {
+      resetTutorial(user.id);
+      // Navigate to trigger tutorial (it will show on next render)
+      router.replace("/(tabs)");
     }
   };
 
@@ -813,6 +827,25 @@ export default function Profile() {
                   </View>
                 )
               }
+            />
+          </View>
+        </Animated.View>
+
+        {/* Support Section */}
+        <Animated.View
+          style={[
+            styles.section,
+            { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+          ]}
+        >
+          <Text style={styles.sectionTitle}>Support</Text>
+          <View style={styles.settingsCard}>
+            <SettingRow
+              icon={<RotateCcw size={20} color={colors.primary} />}
+              title="Replay Tutorial"
+              subtitle="Review the app walkthrough"
+              rightElement={<ChevronRight size={20} color={colors.textTertiary} />}
+              onPress={handleReplayTutorial}
             />
           </View>
         </Animated.View>
