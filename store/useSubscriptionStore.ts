@@ -7,8 +7,9 @@ import { create } from "zustand";
 import { CustomerInfo, PurchasesOffering, PurchasesPackage } from "react-native-purchases";
 import * as purchases from "@/services/purchases";
 
-// Free tier limits
-const FREE_MONTHLY_SEND_LIMIT = 10;
+// Free tier limits - Tightened to drive conversion
+// At 3 invoices/month, contractors hit the wall in week 1 and feel the pain
+const FREE_MONTHLY_SEND_LIMIT = 3;
 
 interface SubscriptionState {
   // State

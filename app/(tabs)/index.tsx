@@ -418,6 +418,65 @@ export default function Dashboard() {
         )}
 
         {/* ═══════════════════════════════════════════════════════════
+            BAD COP FOMO BANNER - Show FREE users what they're missing
+        ═══════════════════════════════════════════════════════════ */}
+        {!isFirstRun && !isPro && (stats?.overdueAmount || 0) > 0 && (
+          <Animated.View style={[styles.badCopFomoBanner, { opacity: fadeAnim }]}>
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                router.push("/paywall?trigger=bad_cop_fomo");
+              }}
+              style={({ pressed }) => [
+                styles.badCopFomoCard,
+                {
+                  backgroundColor: colors.statusOverdue + "08",
+                  borderColor: colors.statusOverdue + "20",
+                  transform: [{ scale: pressed ? 0.98 : 1 }],
+                },
+              ]}
+            >
+              {/* Ghost Icon */}
+              <View style={[styles.badCopFomoIcon, { backgroundColor: colors.statusOverdue + "15" }]}>
+                <AlertCircle size={24} color={colors.statusOverdue} />
+              </View>
+
+              {/* FOMO Content */}
+              <View style={styles.badCopFomoContent}>
+                <Text style={[styles.badCopFomoTitle, { color: colors.statusOverdue }]}>
+                  You're losing money
+                </Text>
+                <Text style={[styles.badCopFomoSubtitle, { color: colors.textSecondary }]}>
+                  Bad Cop would have sent {Math.ceil((stats?.overdueCount || 1) * 2.5)} reminders and likely collected{" "}
+                  <Text style={{ color: colors.statusPaid, fontWeight: "700" }}>
+                    {formatCurrency(Math.round((stats?.overdueAmount || 0) * 0.73), profile?.default_currency)}
+                  </Text>{" "}
+                  by now.
+                </Text>
+              </View>
+
+              {/* CTA */}
+              <View style={[styles.badCopFomoCTA, { backgroundColor: colors.statusOverdue }]}>
+                <Text style={styles.badCopFomoCTAText}>Fix This</Text>
+              </View>
+            </Pressable>
+
+            {/* Ghost notification preview */}
+            <View style={[styles.ghostNotification, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={styles.ghostNotificationDot} />
+              <Text style={[styles.ghostNotificationText, { color: colors.textTertiary }]}>
+                <Text style={{ fontStyle: "italic" }}>
+                  "Bad Cop would have reminded {invoices.find(i => i.status === "overdue")?.client_name?.split(" ")[0] || "your client"} about their ${Math.round((invoices.find(i => i.status === "overdue")?.total || 80000) / 100)} invoice today"
+                </Text>
+              </Text>
+              <Text style={[styles.ghostNotificationMissed, { color: colors.statusOverdue }]}>
+                MISSED
+              </Text>
+            </View>
+          </Animated.View>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════
             DRAFTS SECTION - Unfinished invoices
         ═══════════════════════════════════════════════════════════ */}
         {!isFirstRun && draftInvoices.length > 0 && (
@@ -1271,5 +1330,81 @@ const styles = StyleSheet.create({
   tradeSkipText: {
     fontSize: 15,
     fontWeight: "500",
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // BAD COP FOMO BANNER (Free Users)
+  // ═══════════════════════════════════════════════════════════
+  badCopFomoBanner: {
+    marginHorizontal: CARD_MARGIN,
+    marginBottom: 20,
+  },
+  badCopFomoCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  badCopFomoIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badCopFomoContent: {
+    flex: 1,
+    marginLeft: 12,
+    marginRight: 12,
+  },
+  badCopFomoTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    letterSpacing: -0.3,
+    marginBottom: 4,
+  },
+  badCopFomoSubtitle: {
+    fontSize: 13,
+    fontWeight: "500",
+    lineHeight: 18,
+  },
+  badCopFomoCTA: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  badCopFomoCTAText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  ghostNotification: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: "dashed",
+  },
+  ghostNotificationDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#FF9500",
+    marginRight: 10,
+    opacity: 0.6,
+  },
+  ghostNotificationText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "500",
+    lineHeight: 16,
+  },
+  ghostNotificationMissed: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.5,
   },
 });

@@ -843,10 +843,76 @@ function generateBlackCardInvoice(
       ` : ''}
     </div>
 
-    <!-- Footer -->
+    <!-- Footer with Referral CTA -->
     <div class="footer">
-      Powered by ContractorPro
+      <div class="powered-by">Powered by ContractorPro</div>
     </div>
+
+    <!-- Referral Banner -->
+    <div class="referral-banner">
+      <div class="referral-content">
+        <div class="referral-icon">💰</div>
+        <div class="referral-text">
+          <div class="referral-headline">Are you a contractor?</div>
+          <div class="referral-subtext">Get paid faster with professional invoices like this one</div>
+        </div>
+      </div>
+      <a href="https://contractorpro.app/r?ref=invoice" class="referral-cta" target="_blank">
+        Try Free →
+      </a>
+    </div>
+
+    <style>
+      .referral-banner {
+        margin-top: 48px;
+        padding: 20px 24px;
+        background: linear-gradient(135deg, rgba(0, 214, 50, 0.08) 0%, rgba(0, 214, 50, 0.03) 100%);
+        border: 1px solid rgba(0, 214, 50, 0.2);
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .referral-content {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .referral-icon {
+        font-size: 24px;
+      }
+      .referral-headline {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 2px;
+      }
+      .referral-subtext {
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+      .referral-cta {
+        padding: 10px 20px;
+        background: #00D632;
+        color: #000000;
+        font-size: 13px;
+        font-weight: 600;
+        text-decoration: none;
+        border-radius: 10px;
+        white-space: nowrap;
+        transition: transform 0.15s, opacity 0.15s;
+      }
+      .referral-cta:hover {
+        opacity: 0.9;
+        transform: scale(1.02);
+      }
+      @media print {
+        .referral-banner {
+          display: none;
+        }
+      }
+    </style>
   </div>
 </body>
 </html>

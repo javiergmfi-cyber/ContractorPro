@@ -499,7 +499,68 @@ function renderPaymentPage(invoice: Invoice, profile: Profile, baseUrl: string, 
       <p>Questions? Contact ${businessName}</p>
       <p style="margin-top: 8px;">Powered by <a href="https://contractorpro.app">ContractorPro</a></p>
     </div>
+
+    <!-- Referral Banner for Contractors -->
+    <div class="referral-section">
+      <div class="referral-card">
+        <div class="referral-emoji">🔨</div>
+        <div class="referral-text">
+          <div class="referral-title">Are you a contractor?</div>
+          <div class="referral-subtitle">Send invoices like this in 60 seconds. Get paid faster.</div>
+        </div>
+        <a href="https://contractorpro.app/r?ref=payment&src=${invoice.tracking_id}" class="referral-button">
+          Try Free
+        </a>
+      </div>
+    </div>
   </div>
+
+  <style>
+    .referral-section {
+      padding: 0 0 24px 0;
+    }
+    .referral-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 20px;
+      background: linear-gradient(135deg, rgba(0, 214, 50, 0.12) 0%, rgba(0, 214, 50, 0.04) 100%);
+      border: 1px solid rgba(0, 214, 50, 0.25);
+      border-radius: 16px;
+    }
+    .referral-emoji {
+      font-size: 28px;
+      flex-shrink: 0;
+    }
+    .referral-text {
+      flex: 1;
+    }
+    .referral-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #FFFFFF;
+      margin-bottom: 2px;
+    }
+    .referral-subtitle {
+      font-size: 12px;
+      color: rgba(255,255,255,0.6);
+      line-height: 1.4;
+    }
+    .referral-button {
+      padding: 10px 18px;
+      background: #00D632;
+      color: #000000;
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      border-radius: 10px;
+      white-space: nowrap;
+      transition: transform 0.15s;
+    }
+    .referral-button:active {
+      transform: scale(0.96);
+    }
+  </style>
 </body>
 </html>`;
 }
