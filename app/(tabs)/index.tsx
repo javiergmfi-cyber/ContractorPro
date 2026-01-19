@@ -31,6 +31,9 @@ import {
   Grid3x3,
   FileEdit,
   Send,
+  Languages,
+  FileText,
+  BellRing,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { VoiceButton } from "@/components/VoiceButton";
@@ -47,6 +50,7 @@ import { useSubscriptionStore } from "@/store/useSubscriptionStore";
 import { useActivityStore } from "@/store/useActivityStore";
 import { startRecording, stopRecording } from "@/services/audio";
 import { processVoiceToInvoice } from "@/services/ai";
+import { getSampleInvoiceForTrade } from "@/services/tradeSamples";
 
 // Trade options for first-run experience
 const TRADES = [
@@ -76,7 +80,7 @@ export default function Dashboard() {
 
   const { stats, isLoading, fetchDashboardStats } = useDashboardStore();
   const { profile, fetchProfile, updateProfile } = useProfileStore();
-  const { invoices, fetchInvoices, setPendingInvoice } = useInvoiceStore();
+  const { invoices, fetchInvoices, setPendingInvoice, createInvoice } = useInvoiceStore();
   const { pendingReminders, fetchPendingReminders, showPreflightModal } = usePreflightStore();
   const { isPro } = useSubscriptionStore();
   const { events: activityEvents, fetchRecentActivity } = useActivityStore();
@@ -203,9 +207,40 @@ export default function Dashboard() {
     setSelectedTrade(tradeId);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    // Save to profile
+    // Save to profile and create sample invoice
     try {
       await updateProfile({ trade: tradeId });
+
+      // Create a sample draft invoice for this trade
+      const sample = getSampleInvoiceForTrade(tradeId);
+      if (sample) {
+        const subtotal = sample.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const taxRate = profile?.tax_rate || 0;
+        const taxAmount = subtotal * (taxRate / 100);
+        const total = subtotal + taxAmount;
+
+        await createInvoice(
+          {
+            client_name: sample.clientName,
+            status: "draft",
+            subtotal: subtotal * 100, // Convert to cents
+            tax_rate: taxRate,
+            tax_amount: taxAmount * 100,
+            total: total * 100,
+            notes: sample.notes,
+          },
+          sample.items.map((item) => ({
+            description: item.description,
+            quantity: item.quantity,
+            unit_price: item.price * 100, // Convert to cents
+            amount: item.price * item.quantity * 100,
+          }))
+        );
+
+        // Refresh invoices to show the new draft
+        await fetchInvoices();
+      }
+
       setShowTradeModal(false);
     } catch (error) {
       console.error("Error saving trade:", error);
@@ -242,14 +277,10 @@ export default function Dashboard() {
               {
                 opacity: fadeAnim,
                 transform: [{ scale: scaleAnim }],
+                paddingTop: 20,
               },
             ]}
           >
-            {/* Illustration Circle */}
-            <View style={[styles.emptyIllustration, { backgroundColor: colors.primary + "12" }]}>
-              <TrendingUp size={56} color={colors.primary} strokeWidth={1.5} />
-            </View>
-
             {/* Title */}
             <Text style={[styles.emptyTitle, { color: colors.text }]}>
               Let's Get You Paid
@@ -257,7 +288,7 @@ export default function Dashboard() {
 
             {/* Subtitle */}
             <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-              Create your first invoice in seconds.{"\n"}We'll track the payment for you.
+              Speak your invoice. We handle the rest.
             </Text>
 
             {/* Trade Selection CTA */}
@@ -276,13 +307,6 @@ export default function Dashboard() {
                 <ChevronRight size={16} color={colors.textTertiary} />
               </Pressable>
             )}
-
-            {/* Arrow pointing to voice button */}
-            <View style={styles.emptyArrowHint}>
-              <Text style={[styles.emptyHintText, { color: colors.textTertiary }]}>
-                ↓ Tap the button below to start
-              </Text>
-            </View>
           </Animated.View>
         )}
 
@@ -709,7 +733,7 @@ export default function Dashboard() {
       {/* ═══════════════════════════════════════════════════════════
           INPUT ACTIONS - Siri Orb at Bottom Center
       ═══════════════════════════════════════════════════════════ */}
-      <View style={styles.inputActionsContainer}>
+      <View style={[styles.inputActionsContainer, isFirstRun && styles.inputActionsContainerFirstRun]}>
         <View style={styles.voiceButtonWrapper}>
           <VoiceButton
             onPressIn={handlePressIn}
@@ -722,6 +746,67 @@ export default function Dashboard() {
         <Text style={[styles.inputHint, { color: colors.textTertiary }]}>
           Hold to Speak  •  Tap to Type
         </Text>
+
+        {/* Benefits - Show on first run */}
+        {isFirstRun && (
+          <View style={styles.benefitsContainer}>
+            <View style={styles.benefitItem}>
+              <View style={[styles.benefitIcon, { backgroundColor: colors.primary + "15" }]}>
+                <Languages size={18} color={colors.primary} />
+              </View>
+              <View style={styles.benefitTextContainer}>
+                <Text style={[styles.benefitTitle, { color: colors.text }]}>
+                  Speak Any Language
+                </Text>
+                <Text style={[styles.benefitDescription, { color: colors.textSecondary }]}>
+                  English, Spanish, or Portuguese — we'll translate to professional English automatically
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.benefitItem}>
+              <View style={[styles.benefitIcon, { backgroundColor: colors.primary + "15" }]}>
+                <FileText size={18} color={colors.primary} />
+              </View>
+              <View style={styles.benefitTextContainer}>
+                <Text style={[styles.benefitTitle, { color: colors.text }]}>
+                  Invoices & Estimates
+                </Text>
+                <Text style={[styles.benefitDescription, { color: colors.textSecondary }]}>
+                  Customers can approve estimates and pay deposits instantly
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.benefitItem}>
+              <View style={[styles.benefitIcon, { backgroundColor: colors.primary + "15" }]}>
+                <BellRing size={18} color={colors.primary} />
+              </View>
+              <View style={styles.benefitTextContainer}>
+                <Text style={[styles.benefitTitle, { color: colors.text }]}>
+                  Auto Payment Reminders
+                </Text>
+                <Text style={[styles.benefitDescription, { color: colors.textSecondary }]}>
+                  We follow up automatically until you're paid — no more chasing customers
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.benefitItem}>
+              <View style={[styles.benefitIcon, { backgroundColor: colors.primary + "15" }]}>
+                <Shield size={18} color={colors.primary} />
+              </View>
+              <View style={styles.benefitTextContainer}>
+                <Text style={[styles.benefitTitle, { color: colors.text }]}>
+                  Professional Branding
+                </Text>
+                <Text style={[styles.benefitDescription, { color: colors.textSecondary }]}>
+                  Send polished invoices with your logo that make you look like a pro
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
       </View>
 
       <RecordingOverlay visible={isRecording} duration={recordingDuration} />
@@ -1196,12 +1281,48 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: "center",
   },
+  inputActionsContainerFirstRun: {
+    bottom: "auto",
+    top: 180,
+  },
   voiceButtonWrapper: {
     marginBottom: 12,
   },
   inputHint: {
     fontSize: 13,
     fontWeight: "500",
+    letterSpacing: -0.1,
+  },
+  benefitsContainer: {
+    marginTop: 48,
+    paddingHorizontal: 24,
+    width: "100%",
+  },
+  benefitItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: 20,
+  },
+  benefitIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  benefitTextContainer: {
+    flex: 1,
+  },
+  benefitTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    marginBottom: 2,
+    letterSpacing: -0.3,
+  },
+  benefitDescription: {
+    fontSize: 13,
+    lineHeight: 18,
     letterSpacing: -0.1,
   },
 

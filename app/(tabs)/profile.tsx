@@ -10,6 +10,7 @@ import {
   Alert,
   Switch,
   Modal,
+  TouchableOpacity,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -42,6 +43,21 @@ import {
   Eye,
   Banknote,
   RotateCcw,
+  Home,
+  DoorOpen,
+  Layers,
+  TreePine,
+  Square,
+  CircleDot,
+  Scan,
+  Package,
+  Sparkles,
+  Waves,
+  Box,
+  LayoutGrid,
+  Wind,
+  KeyRound,
+  Sun,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
@@ -56,17 +72,110 @@ import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/Button";
 
 // Trade options - Painter first (highest volume solo operators, tight community)
-const TRADES = [
-  { id: "painter", name: "Painter", icon: Paintbrush, color: "#AF52DE", featured: true },
-  { id: "handyman", name: "Handyman", icon: Wrench, color: "#34C759" },
-  { id: "plumber", name: "Plumber", icon: Droplet, color: "#007AFF" },
-  { id: "electrician", name: "Electrician", icon: Zap, color: "#FF9500" },
-  { id: "hvac", name: "HVAC", icon: Thermometer, color: "#FF3B30" },
-  { id: "tile_stone", name: "Tile / Stone", icon: Grid3x3, color: "#5AC8FA" },
-  { id: "carpenter", name: "Carpenter", icon: Hammer, color: "#A2845E" },
-  { id: "general", name: "General Contractor", icon: HardHat, color: "#8E8E93" },
-  { id: "other", name: "Other", icon: Wrench, color: "#636366" },
+const TRADE_CATEGORIES = [
+  {
+    title: "General",
+    trades: [
+      { id: "carpenter", name: "Carpenter", icon: Hammer, color: "#A2845E" },
+      { id: "general", name: "General Contractor", icon: HardHat, color: "#8E8E93" },
+      { id: "handyman", name: "Handyman", icon: Wrench, color: "#34C759" },
+    ],
+  },
+  {
+    title: "Interior",
+    trades: [
+      { id: "appliance_repair", name: "Appliance Repair", icon: Settings, color: "#6C7A89" },
+      { id: "cabinet_kitchen_bath", name: "Cabinet / Kitchen & Bath", icon: Package, color: "#D35400" },
+      { id: "drywall", name: "Drywall", icon: Square, color: "#BDC3C7" },
+      { id: "flooring", name: "Flooring", icon: Layers, color: "#8E44AD" },
+      { id: "insulation", name: "Insulation", icon: Wind, color: "#E91E63" },
+      { id: "painter", name: "Painter", icon: Paintbrush, color: "#AF52DE" },
+      { id: "tile_stone", name: "Tile / Stone", icon: Grid3x3, color: "#5AC8FA" },
+    ],
+  },
+  {
+    title: "Exterior",
+    trades: [
+      { id: "concrete", name: "Concrete", icon: CircleDot, color: "#7F8C8D" },
+      { id: "deck_builder", name: "Deck Builder", icon: LayoutGrid, color: "#A2845E" },
+      { id: "fencing", name: "Fencing", icon: Scan, color: "#27AE60" },
+      { id: "garage_door", name: "Garage Door", icon: Package, color: "#34495E" },
+      { id: "gutters", name: "Gutters", icon: Box, color: "#1ABC9C" },
+      { id: "landscaper", name: "Landscaper", icon: TreePine, color: "#2ECC71" },
+      { id: "masonry", name: "Masonry", icon: Box, color: "#C0392B" },
+      { id: "paver", name: "Paver", icon: Grid3x3, color: "#95A5A6" },
+      { id: "pool_service", name: "Pool Service", icon: Waves, color: "#3498DB" },
+      { id: "pressure_washing", name: "Pressure Washing", icon: Sparkles, color: "#00BCD4" },
+      { id: "roofer", name: "Roofer", icon: Home, color: "#E74C3C" },
+      { id: "siding", name: "Siding", icon: LayoutGrid, color: "#607D8B" },
+      { id: "stucco", name: "Stucco", icon: CircleDot, color: "#F39C12" },
+      { id: "windows_doors", name: "Windows / Doors", icon: DoorOpen, color: "#9B59B6" },
+    ],
+  },
+  {
+    title: "Mechanical & Specialty",
+    trades: [
+      { id: "electrician", name: "Electrician", icon: Zap, color: "#FF9500" },
+      { id: "glass_glazier", name: "Glass / Glazier", icon: Square, color: "#00BCD4" },
+      { id: "hvac", name: "HVAC", icon: Thermometer, color: "#FF3B30" },
+      { id: "locksmith", name: "Locksmith", icon: KeyRound, color: "#FFD700" },
+      { id: "plumber", name: "Plumber", icon: Droplet, color: "#007AFF" },
+    ],
+  },
+  {
+    title: "Other",
+    trades: [
+      { id: "other", name: "Other", icon: Wrench, color: "#636366" },
+    ],
+  },
 ];
+
+// Flat list for lookups
+const ALL_TRADES = TRADE_CATEGORIES.flatMap(cat => cat.trades);
+
+// Standalone InputField component to prevent re-renders
+const ProfileInputField = ({
+  label,
+  value,
+  onChangeText,
+  onBlur,
+  placeholder,
+  keyboardType = "default",
+  multiline = false,
+  autoCapitalize = "sentences",
+  labelStyle,
+  inputStyle,
+  containerStyle,
+  placeholderTextColor,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  onBlur?: () => void;
+  placeholder: string;
+  keyboardType?: "default" | "email-address" | "phone-pad" | "decimal-pad";
+  multiline?: boolean;
+  autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  labelStyle?: any;
+  inputStyle?: any;
+  containerStyle?: any;
+  placeholderTextColor?: string;
+}) => (
+  <View style={containerStyle}>
+    <Text style={labelStyle}>{label}</Text>
+    <TextInput
+      style={inputStyle}
+      value={value}
+      onChangeText={onChangeText}
+      onBlur={onBlur}
+      placeholder={placeholder}
+      placeholderTextColor={placeholderTextColor}
+      keyboardType={keyboardType}
+      multiline={multiline}
+      autoCapitalize={autoCapitalize}
+    />
+  </View>
+);
 
 /**
  * Profile Screen
@@ -105,6 +214,11 @@ export default function Profile() {
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [taxRateFocused, setTaxRateFocused] = useState(false);
 
+  // Local form state for smooth typing
+  const [businessName, setBusinessName] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [taxRate, setTaxRate] = useState("");
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
 
@@ -133,6 +247,15 @@ export default function Profile() {
       setTemplateText(reminderSettings.message_template);
     }
   }, [reminderSettings]);
+
+  // Sync local form state with profile data
+  useEffect(() => {
+    if (profile) {
+      setBusinessName(profile.business_name || "");
+      setFullName(profile.full_name || "");
+      setTaxRate(profile.tax_rate?.toString() || "0");
+    }
+  }, [profile]);
 
   const pickImage = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -166,7 +289,7 @@ export default function Profile() {
     }
   };
 
-  const currentTrade = TRADES.find((t) => t.id === profile?.trade);
+  const currentTrade = ALL_TRADES.find((t) => t.id === profile?.trade);
   const TradeIcon = currentTrade?.icon || Wrench;
 
   const handleToggleReminders = async () => {
@@ -287,38 +410,6 @@ export default function Profile() {
   const totalPending = pendingUploads + pendingOperations;
 
   const styles = createStyles(colors, isDark, spacing, radius, typography);
-
-  const InputField = ({
-    label,
-    value,
-    onChangeText,
-    placeholder,
-    keyboardType = "default",
-    multiline = false,
-    autoCapitalize = "sentences",
-  }: {
-    label: string;
-    value: string;
-    onChangeText: (text: string) => void;
-    placeholder: string;
-    keyboardType?: "default" | "email-address" | "phone-pad" | "decimal-pad";
-    multiline?: boolean;
-    autoCapitalize?: "none" | "sentences" | "words" | "characters";
-  }) => (
-    <View style={styles.inputContainer}>
-      <Text style={styles.inputLabel}>{label}</Text>
-      <TextInput
-        style={[styles.input, multiline && styles.inputMultiline]}
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={colors.textTertiary}
-        keyboardType={keyboardType}
-        multiline={multiline}
-        autoCapitalize={autoCapitalize}
-      />
-    </View>
-  );
 
   const SettingRow = ({
     icon,
@@ -454,20 +545,30 @@ export default function Profile() {
             { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
           ]}
         >
-          <InputField
+          <ProfileInputField
             label="Business Name"
-            value={profile?.business_name || ""}
-            onChangeText={(text) => updateProfile({ business_name: text })}
+            value={businessName}
+            onChangeText={setBusinessName}
+            onBlur={() => businessName !== profile?.business_name && updateProfile({ business_name: businessName })}
             placeholder="Your Business Name"
             autoCapitalize="words"
+            containerStyle={styles.inputContainer}
+            labelStyle={styles.inputLabel}
+            inputStyle={styles.input}
+            placeholderTextColor={colors.textTertiary}
           />
 
-          <InputField
+          <ProfileInputField
             label="Owner Name"
-            value={profile?.full_name || ""}
-            onChangeText={(text) => updateProfile({ full_name: text })}
+            value={fullName}
+            onChangeText={setFullName}
+            onBlur={() => fullName !== profile?.full_name && updateProfile({ full_name: fullName })}
             placeholder="Your Full Name"
             autoCapitalize="words"
+            containerStyle={styles.inputContainer}
+            labelStyle={styles.inputLabel}
+            inputStyle={styles.input}
+            placeholderTextColor={colors.textTertiary}
           />
 
           <View style={styles.inputContainer}>
@@ -475,13 +576,19 @@ export default function Profile() {
             <View style={styles.inputWithSuffix}>
               <TextInput
                 style={[styles.input, styles.inputWithSuffixField]}
-                value={profile?.tax_rate?.toString() || "0"}
-                onChangeText={(text) => updateProfile({ tax_rate: parseFloat(text) || 0 })}
+                value={taxRate}
+                onChangeText={setTaxRate}
                 placeholder="0"
                 placeholderTextColor={colors.textTertiary}
                 keyboardType="decimal-pad"
                 onFocus={() => setTaxRateFocused(true)}
-                onBlur={() => setTaxRateFocused(false)}
+                onBlur={() => {
+                  setTaxRateFocused(false);
+                  const newRate = parseFloat(taxRate) || 0;
+                  if (newRate !== profile?.tax_rate) {
+                    updateProfile({ tax_rate: newRate });
+                  }
+                }}
               />
               {!taxRateFocused && (
                 <Text style={[styles.inputSuffix, { color: colors.textTertiary }]}>%</Text>
@@ -864,25 +971,23 @@ export default function Profile() {
         </Animated.View>
 
         {/* Log Out Section */}
-        <Animated.View
-          style={[
-            styles.section,
-            { opacity: fadeAnim, transform: [{ translateY: slideAnim }], marginTop: spacing.xl },
-          ]}
-        >
-          <Pressable
-            style={({ pressed }) => [
-              styles.logoutButton,
-              { backgroundColor: isDark ? colors.card : colors.backgroundSecondary },
-              pressed && { opacity: 0.7 },
-            ]}
+        <View style={{ paddingHorizontal: 16, marginTop: 32 }}>
+          <TouchableOpacity
             onPress={handleLogout}
+            activeOpacity={0.7}
+            style={{
+              backgroundColor: "#E5E5EA",
+              borderRadius: 12,
+              paddingVertical: 16,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
           >
-            <Text style={[typography.body, { color: colors.statusOverdue, fontWeight: "600" }]}>
+            <Text style={{ fontSize: 17, fontWeight: "600", color: "#FF3B30" }}>
               Log Out
             </Text>
-          </Pressable>
-        </Animated.View>
+          </TouchableOpacity>
+        </View>
 
         {/* Bottom spacing */}
         <View style={{ height: spacing.xl }} />
@@ -1017,45 +1122,53 @@ export default function Profile() {
             <View style={{ width: 50 }} />
           </View>
 
-          <View style={styles.modalContent}>
-            <Text style={[typography.footnote, { color: colors.textSecondary, marginBottom: spacing.md }]}>
+          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+            <Text style={[typography.footnote, { color: colors.textSecondary, marginBottom: spacing.lg }]}>
               Select your profession to personalize your experience
             </Text>
 
-            {TRADES.map((trade) => {
-              const TradeIconComponent = trade.icon;
-              const isSelected = profile?.trade === trade.id;
+            {TRADE_CATEGORIES.map((category) => (
+              <View key={category.title} style={{ marginBottom: spacing.lg }}>
+                <Text style={[typography.caption1, { color: colors.textTertiary, marginBottom: spacing.sm, marginLeft: 4, fontWeight: "600", letterSpacing: 0.5 }]}>
+                  {category.title.toUpperCase()}
+                </Text>
+                {category.trades.map((trade) => {
+                  const TradeIconComponent = trade.icon;
+                  const isSelected = profile?.trade === trade.id;
 
-              return (
-                <Pressable
-                  key={trade.id}
-                  style={[
-                    styles.tradeOption,
-                    {
-                      backgroundColor: isSelected ? trade.color + "15" : colors.backgroundSecondary,
-                      borderRadius: radius.md,
-                      borderWidth: isSelected ? 2 : 1,
-                      borderColor: isSelected ? trade.color : colors.border,
-                    },
-                  ]}
-                  onPress={() => handleTradeSelect(trade.id)}
-                >
-                  <View style={[styles.tradeOptionIcon, { backgroundColor: trade.color + "20" }]}>
-                    <TradeIconComponent size={22} color={trade.color} />
-                  </View>
-                  <Text
-                    style={[
-                      typography.body,
-                      { color: isSelected ? trade.color : colors.text, flex: 1 },
-                    ]}
-                  >
-                    {trade.name}
-                  </Text>
-                  {isSelected && <Check size={20} color={trade.color} />}
-                </Pressable>
-              );
-            })}
-          </View>
+                  return (
+                    <Pressable
+                      key={trade.id}
+                      style={[
+                        styles.tradeOption,
+                        {
+                          backgroundColor: isSelected ? trade.color + "15" : colors.backgroundSecondary,
+                          borderRadius: radius.md,
+                          borderWidth: isSelected ? 2 : 1,
+                          borderColor: isSelected ? trade.color : colors.border,
+                        },
+                      ]}
+                      onPress={() => handleTradeSelect(trade.id)}
+                    >
+                      <View style={[styles.tradeOptionIcon, { backgroundColor: trade.color + "20" }]}>
+                        <TradeIconComponent size={22} color={trade.color} />
+                      </View>
+                      <Text
+                        style={[
+                          typography.body,
+                          { color: isSelected ? trade.color : colors.text, flex: 1 },
+                        ]}
+                      >
+                        {trade.name}
+                      </Text>
+                      {isSelected && <Check size={20} color={trade.color} />}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ))}
+            <View style={{ height: 40 }} />
+          </ScrollView>
         </SafeAreaView>
       </Modal>
     </SafeAreaView>
