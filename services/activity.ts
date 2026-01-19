@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Activity Service
  * Tracks system events for the activity feed

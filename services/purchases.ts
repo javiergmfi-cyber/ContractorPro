@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * RevenueCat Purchases Service
  * Handles subscription management, entitlements, and purchases

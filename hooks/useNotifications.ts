@@ -18,7 +18,7 @@ import { useReminderStore } from "@/store/useReminderStore";
 
 export function useNotifications() {
   const router = useRouter();
-  const notificationResponseListener = useRef<Notifications.Subscription>();
+  const notificationResponseListener = useRef<Notifications.Subscription | null>(null);
 
   const { showPreflightModal } = usePreflightStore();
   const { isPro } = useSubscriptionStore();
@@ -46,14 +46,7 @@ export function useNotifications() {
 
     return () => {
       if (notificationResponseListener.current) {
-        // Safety check for Expo Go compatibility
-        if (typeof Notifications.removeNotificationSubscription === "function") {
-          Notifications.removeNotificationSubscription(
-            notificationResponseListener.current
-          );
-        } else {
-          notificationResponseListener.current.remove?.();
-        }
+        notificationResponseListener.current.remove();
       }
     };
   }, []);

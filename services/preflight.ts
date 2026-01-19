@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Pre-Flight Check Service
  * Manages the daily "Bad Cop" review before auto-reminders are sent

@@ -222,6 +222,7 @@ export default function Dashboard() {
         await createInvoice(
           {
             client_name: sample.clientName,
+            invoice_number: `INV-${Date.now().toString(36).toUpperCase()}`,
             status: "draft",
             subtotal: subtotal * 100, // Convert to cents
             tax_rate: taxRate,
@@ -595,11 +596,12 @@ export default function Dashboard() {
                     ]}
                   >
                     {/* Client Avatar */}
-                    <MonogramAvatar
-                      name={invoice.client_name}
-                      size={40}
-                      style={{ marginBottom: 8 }}
-                    />
+                    <View style={{ marginBottom: 8 }}>
+                      <MonogramAvatar
+                        name={invoice.client_name}
+                        size="sm"
+                      />
+                    </View>
 
                     {/* Amount */}
                     <Text

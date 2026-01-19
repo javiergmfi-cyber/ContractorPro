@@ -100,7 +100,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       const { count, error } = await supabase
         .from("invoices")
         .select("*", { count: "exact", head: true })
-        .eq("user_id", profile?.id)
+        .eq("user_id", profile?.id ?? "")
         .gte("created_at", startOfMonthISO);
 
       if (error) {

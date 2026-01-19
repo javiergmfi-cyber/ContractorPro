@@ -232,7 +232,7 @@ function RollingDigit({ targetDigit, style, delay = 0, duration = 800 }: Rolling
 interface AnimatedCurrencyProps {
   cents: number;
   currency?: string;
-  style?: TextStyle;
+  style?: TextStyle | TextStyle[];
   duration?: number;
 }
 
@@ -284,8 +284,9 @@ export function AnimatedCurrency({
     setDisplayText(formatted);
   }, []);
 
+  const flatStyle = Array.isArray(style) ? style : style ? [style] : [];
   return (
-    <Text style={[styles.number, style]}>
+    <Text style={[styles.number, ...flatStyle]}>
       {displayText}
     </Text>
   );

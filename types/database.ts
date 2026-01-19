@@ -17,9 +17,43 @@ export type LateFeeType = 'percent' | 'fixed';
 export type SubscriptionStatus = 'free' | 'active' | 'canceled' | 'past_due' | 'trialing';
 export type SubscriptionTier = 'free' | 'pro';
 
+export type ActivityEventType = 'invoice_sent' | 'invoice_viewed' | 'reminder_sent' | 'payment_received';
+
 export interface Database {
+  PostgrestVersion: '12';
   public: {
     Tables: {
+      activity_events: {
+        Row: {
+          id: string;
+          user_id: string;
+          type: ActivityEventType;
+          invoice_id: string | null;
+          client_name: string | null;
+          amount: number | null;
+          metadata: Json | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          type: ActivityEventType;
+          invoice_id?: string | null;
+          client_name?: string | null;
+          amount?: number | null;
+          metadata?: Json | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          type?: ActivityEventType;
+          invoice_id?: string | null;
+          client_name?: string | null;
+          amount?: number | null;
+          metadata?: Json | null;
+        };
+      };
       profiles: {
         Row: {
           id: string;
@@ -415,9 +449,65 @@ export interface Database {
           error_message?: string | null;
         };
       };
+      push_tokens: {
+        Row: {
+          id: string;
+          user_id: string;
+          push_token: string;
+          platform: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          push_token: string;
+          platform?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          push_token?: string;
+          platform?: string;
+          updated_at?: string;
+        };
+      };
+      cancelled_reminders: {
+        Row: {
+          id: string;
+          user_id: string;
+          invoice_id: string;
+          cancelled_date: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          invoice_id: string;
+          cancelled_date: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          invoice_id?: string;
+          cancelled_date?: string;
+        };
+      };
+    };
+    Views: {
+      [_ in never]: never;
+    };
+    Functions: {
+      [_ in never]: never;
     };
     Enums: {
       invoice_status: InvoiceStatus;
+    };
+    CompositeTypes: {
+      [_ in never]: never;
     };
   };
 }

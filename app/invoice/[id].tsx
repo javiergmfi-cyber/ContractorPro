@@ -154,7 +154,7 @@ export default function InvoiceDetail() {
 
       if (!inv && id) {
         // Fetch from database
-        inv = await db.getInvoice(id);
+        inv = await db.getInvoice(id) ?? undefined;
       }
 
       if (inv) {

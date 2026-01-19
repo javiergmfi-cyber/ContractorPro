@@ -10,13 +10,16 @@ export interface ParsedInvoice {
   items: {
     description: string;
     price: number;
+    unitPrice?: number; // Alias for price, used in some components
     quantity?: number;
     originalTranscriptSegment?: string;
+    originalTranscript?: string; // Alias for originalTranscriptSegment
   }[];
   detectedLanguage: string;
   confidence?: number;
   notes?: string;
   dueDate?: string; // ISO date string
+  originalTranscript?: string; // Full transcript for the invoice
 }
 
 interface InvoiceState {
@@ -82,11 +85,13 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
     try {
       const result = await db.createInvoice(invoice, items);
       if (result) {
+        // Handle both possible return types from createInvoice
+        const newInvoice = (result as any).invoice ?? result;
         set((state) => ({
-          invoices: [result.invoice, ...state.invoices],
+          invoices: [newInvoice, ...state.invoices],
           isCreating: false,
         }));
-        return result.invoice;
+        return newInvoice;
       }
       set({ isCreating: false });
       return null;

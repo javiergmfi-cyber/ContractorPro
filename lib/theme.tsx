@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, ReactNode } from "react";
-import { useColorScheme, Platform } from "react-native";
+import { useColorScheme, Platform, TextStyle } from "react-native";
+
+type FontVariant = TextStyle['fontVariant'];
 
 /**
  * Theme Configuration
@@ -44,6 +46,7 @@ export const colors = {
 
     card: "#FFFFFF",
     cardElevated: "#FFFFFF",
+    surface: "#FFFFFF",
 
     shadow: "#000000",
     overlay: "rgba(0, 0, 0, 0.5)",
@@ -85,6 +88,7 @@ export const colors = {
 
     card: "#1C1C1E",
     cardElevated: "#2C2C2E",
+    surface: "#1C1C1E",
 
     shadow: "#000000",
     overlay: "rgba(0, 0, 0, 0.7)",
@@ -134,7 +138,7 @@ export const typography = {
     fontFamily,
     letterSpacing: 0.37,
     lineHeight: 41,
-    fontVariant: ["tabular-nums"] as const,
+    fontVariant: ["tabular-nums"] as FontVariant,
   },
   title1: {
     fontSize: 28,
@@ -142,7 +146,7 @@ export const typography = {
     fontFamily,
     letterSpacing: 0.36,
     lineHeight: 34,
-    fontVariant: ["tabular-nums"] as const,
+    fontVariant: ["tabular-nums"] as FontVariant,
   },
   title2: {
     fontSize: 22,
@@ -150,7 +154,7 @@ export const typography = {
     fontFamily,
     letterSpacing: 0.35,
     lineHeight: 28,
-    fontVariant: ["tabular-nums"] as const,
+    fontVariant: ["tabular-nums"] as FontVariant,
   },
   title3: {
     fontSize: 20,
@@ -158,7 +162,7 @@ export const typography = {
     fontFamily,
     letterSpacing: 0.38,
     lineHeight: 25,
-    fontVariant: ["tabular-nums"] as const,
+    fontVariant: ["tabular-nums"] as FontVariant,
   },
   // Headlines - Semibold
   headline: {
@@ -167,7 +171,7 @@ export const typography = {
     fontFamily,
     letterSpacing: -0.41,
     lineHeight: 22,
-    fontVariant: ["tabular-nums"] as const,
+    fontVariant: ["tabular-nums"] as FontVariant,
   },
   // Body - Medium
   body: {
@@ -176,7 +180,7 @@ export const typography = {
     fontFamily,
     letterSpacing: -0.41,
     lineHeight: 22,
-    fontVariant: ["tabular-nums"] as const,
+    fontVariant: ["tabular-nums"] as FontVariant,
   },
   callout: {
     fontSize: 16,
@@ -184,7 +188,7 @@ export const typography = {
     fontFamily,
     letterSpacing: -0.32,
     lineHeight: 21,
-    fontVariant: ["tabular-nums"] as const,
+    fontVariant: ["tabular-nums"] as FontVariant,
   },
   subhead: {
     fontSize: 15,
@@ -192,7 +196,7 @@ export const typography = {
     fontFamily,
     letterSpacing: -0.24,
     lineHeight: 20,
-    fontVariant: ["tabular-nums"] as const,
+    fontVariant: ["tabular-nums"] as FontVariant,
   },
   footnote: {
     fontSize: 13,
@@ -200,7 +204,7 @@ export const typography = {
     fontFamily,
     letterSpacing: -0.08,
     lineHeight: 18,
-    fontVariant: ["tabular-nums"] as const,
+    fontVariant: ["tabular-nums"] as FontVariant,
   },
   caption1: {
     fontSize: 12,
@@ -208,7 +212,7 @@ export const typography = {
     fontFamily,
     letterSpacing: 0,
     lineHeight: 16,
-    fontVariant: ["tabular-nums"] as const,
+    fontVariant: ["tabular-nums"] as FontVariant,
   },
   caption2: {
     fontSize: 11,
@@ -216,7 +220,7 @@ export const typography = {
     fontFamily,
     letterSpacing: 0.07,
     lineHeight: 13,
-    fontVariant: ["tabular-nums"] as const,
+    fontVariant: ["tabular-nums"] as FontVariant,
   },
   // Numbers - Heavy with tabular figures
   invoiceAmount: {
@@ -225,7 +229,7 @@ export const typography = {
     fontFamily,
     letterSpacing: -0.5,
     lineHeight: 28,
-    fontVariant: ["tabular-nums"] as const,
+    fontVariant: ["tabular-nums"] as FontVariant,
   },
   amount: {
     fontSize: 44,
@@ -233,7 +237,7 @@ export const typography = {
     fontFamily,
     letterSpacing: -1,
     lineHeight: 52,
-    fontVariant: ["tabular-nums"] as const,
+    fontVariant: ["tabular-nums"] as FontVariant,
   },
   amountSmall: {
     fontSize: 28,
@@ -241,7 +245,7 @@ export const typography = {
     fontFamily,
     letterSpacing: -0.5,
     lineHeight: 34,
-    fontVariant: ["tabular-nums"] as const,
+    fontVariant: ["tabular-nums"] as FontVariant,
   },
   // Monospace numbers for counters/timers
   mono: {
@@ -250,7 +254,7 @@ export const typography = {
     fontFamily: Platform.select({ ios: "SF Mono", default: "monospace" }),
     letterSpacing: 0,
     lineHeight: 22,
-    fontVariant: ["tabular-nums"] as const,
+    fontVariant: ["tabular-nums"] as FontVariant,
   },
 };
 
@@ -413,7 +417,7 @@ export function useTheme() {
  * iOS Electric Status Colors
  */
 export function getStatusColor(
-  status: "draft" | "sent" | "paid" | "overdue" | "void",
+  status: "draft" | "sent" | "paid" | "overdue" | "void" | "deposit_paid",
   themeColors: typeof colors.light
 ): { background: string; text: string } {
   switch (status) {
@@ -421,6 +425,11 @@ export function getStatusColor(
       return {
         background: themeColors.statusPaid + "20",
         text: themeColors.statusPaid,
+      };
+    case "deposit_paid":
+      return {
+        background: themeColors.systemOrange + "20",
+        text: themeColors.systemOrange,
       };
     case "overdue":
       return {

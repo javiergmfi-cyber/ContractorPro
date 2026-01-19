@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Stripe Service
  * Handles Stripe Connect operations

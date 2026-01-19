@@ -264,7 +264,7 @@ export default function CreateInvoiceScreen() {
             </Pressable>
           ) : (
             <Pressable onPress={handlePickContact} style={styles.selectedClientContainer}>
-              <MonogramAvatar name={selectedContact.name} size={72} />
+              <MonogramAvatar name={selectedContact.name} size="lg" />
               <Text style={[styles.selectedClientName, { color: colors.text }]}>
                 {selectedContact.name}
               </Text>

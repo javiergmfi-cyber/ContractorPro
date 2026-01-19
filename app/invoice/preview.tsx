@@ -120,6 +120,7 @@ export default function InvoicePreview() {
       // Create invoice in database with deposit settings
       const invoiceData = {
         client_name: clientName,
+        invoice_number: `INV-${Date.now().toString(36).toUpperCase()}`,
         subtotal,
         tax_amount: taxAmount,
         total,
@@ -316,7 +317,7 @@ export default function InvoicePreview() {
               <BlackCardInvoice
                 total={total}
                 businessName={profile?.business_name || profile?.full_name || "Your Business"}
-                logoUrl={profile?.logo_url}
+                logoUrl={profile?.logo_url ?? undefined}
                 invoiceNumber={`INV-${Date.now().toString().slice(-6)}`}
                 clientName={clientName}
                 clientEmail={pendingInvoice.clientEmail}
