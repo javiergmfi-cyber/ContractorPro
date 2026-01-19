@@ -147,8 +147,13 @@ export default function CreateInvoiceScreen() {
       const phone = contact.phoneNumbers?.[0]?.number;
       const email = contact.emails?.[0]?.email;
 
+      // Construct name from firstName/lastName if name is not available
+      const name = contact.name
+        || [contact.firstName, contact.lastName].filter(Boolean).join(" ")
+        || "Unknown";
+
       setSelectedContact({
-        name: contact.name || "Unknown",
+        name,
         phone,
         email,
       });

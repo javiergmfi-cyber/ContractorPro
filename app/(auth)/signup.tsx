@@ -15,6 +15,7 @@ import { useTheme } from "@/lib/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { SocialLoginButtons } from "@/components/auth/SocialLoginButtons";
 
 export default function SignUpScreen() {
   const { colors, typography, spacing, radius } = useTheme();
@@ -176,6 +177,11 @@ export default function SignUpScreen() {
             <Button
               title={isLoading ? "Creating account..." : "Create Account"}
               onPress={handleSignUp}
+              disabled={isLoading}
+            />
+
+            <SocialLoginButtons
+              onError={setError}
               disabled={isLoading}
             />
           </View>

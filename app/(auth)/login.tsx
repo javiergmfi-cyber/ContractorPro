@@ -16,6 +16,7 @@ import { useTheme } from "@/lib/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { SocialLoginButtons } from "@/components/auth/SocialLoginButtons";
 
 export default function LoginScreen() {
   const { colors, typography, spacing, radius } = useTheme();
@@ -124,6 +125,11 @@ export default function LoginScreen() {
             <Button
               title={isLoading ? "Signing in..." : "Sign In"}
               onPress={handleLogin}
+              disabled={isLoading}
+            />
+
+            <SocialLoginButtons
+              onError={setError}
               disabled={isLoading}
             />
           </View>

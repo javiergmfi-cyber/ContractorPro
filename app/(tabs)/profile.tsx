@@ -76,8 +76,8 @@ const TRADES = [
 export default function Profile() {
   const router = useRouter();
   const { colors, typography, spacing, radius, isDark } = useTheme();
-  const { user } = useAuth();
-  const { profile, updateProfile, fetchProfile, isSaving } = useProfileStore();
+  const { user, signOut } = useAuth();
+  const { profile, updateProfile, fetchProfile } = useProfileStore();
   const { resetTutorial } = useTutorialStore();
   const {
     settings: reminderSettings,
@@ -153,11 +153,6 @@ export default function Profile() {
     if (!result.canceled && result.assets[0]) {
       updateProfile({ logo_url: result.assets[0].uri });
     }
-  };
-
-  const handleSave = async () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert("Saved", "Your profile has been updated.");
   };
 
   const handleTradeSelect = async (tradeId: string) => {
@@ -268,6 +263,24 @@ export default function Profile() {
       // Navigate to trigger tutorial (it will show on next render)
       router.replace("/(tabs)");
     }
+  };
+
+  const handleLogout = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Alert.alert(
+      "Log Out",
+      "Are you sure you want to log out?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Log Out",
+          style: "destructive",
+          onPress: async () => {
+            await signOut();
+          },
+        },
+      ]
+    );
   };
 
   const stripeConnected = profile?.charges_enabled && profile?.payouts_enabled;
@@ -850,21 +863,29 @@ export default function Profile() {
           </View>
         </Animated.View>
 
-        {/* Save Button */}
-        <Animated.View style={[styles.saveButtonContainer, { opacity: fadeAnim }]}>
+        {/* Log Out Section */}
+        <Animated.View
+          style={[
+            styles.section,
+            { opacity: fadeAnim, transform: [{ translateY: slideAnim }], marginTop: spacing.xl },
+          ]}
+        >
           <Pressable
             style={({ pressed }) => [
-              styles.saveButton,
-              pressed && styles.saveButtonPressed,
+              styles.logoutButton,
+              { backgroundColor: isDark ? colors.card : colors.backgroundSecondary },
+              pressed && { opacity: 0.7 },
             ]}
-            onPress={handleSave}
+            onPress={handleLogout}
           >
-            <Check size={20} color="#FFFFFF" />
-            <Text style={styles.saveButtonText}>
-              {isSaving ? "Saving..." : "Save Profile"}
+            <Text style={[typography.body, { color: colors.statusOverdue, fontWeight: "600" }]}>
+              Log Out
             </Text>
           </Pressable>
         </Animated.View>
+
+        {/* Bottom spacing */}
+        <View style={{ height: spacing.xl }} />
       </ScrollView>
 
       {/* Reminder Schedule Modal */}
@@ -1306,31 +1327,12 @@ const createStyles = (colors: any, isDark: boolean, spacing: any, radius: any, t
       height: 1,
       marginLeft: 56,
     },
-    saveButtonContainer: {
-      paddingHorizontal: spacing.lg,
-      paddingTop: spacing.xl,
-    },
-    saveButton: {
-      flexDirection: "row",
+    logoutButton: {
+      width: "100%",
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: colors.primary,
-      paddingVertical: spacing.md,
-      borderRadius: radius.full,
-      gap: spacing.sm,
-      shadowColor: colors.primary,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.3,
-      shadowRadius: 8,
-      elevation: 5,
-    },
-    saveButtonPressed: {
-      opacity: 0.9,
-      transform: [{ scale: 0.98 }],
-    },
-    saveButtonText: {
-      ...typography.headline,
-      color: "#FFFFFF",
+      paddingVertical: 16,
+      borderRadius: 12,
     },
     // Modal Styles
     modalContainer: {
