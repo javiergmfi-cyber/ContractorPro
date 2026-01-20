@@ -30,6 +30,7 @@ import {
   Zap,
   ChevronRight,
   Crown,
+  Star,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
@@ -42,6 +43,7 @@ import { Invoice, formatCurrency, formatRelativeDate } from "@/types";
 import { sendInvoice, generateInvoicePDF } from "@/services/invoice";
 import { getPaymentLink } from "@/services/stripe";
 import * as db from "@/services/database";
+import { ReviewPrompt } from "@/components/ReviewPrompt";
 
 /**
  * Invoice Detail Screen - Elastic Parallax
@@ -73,6 +75,7 @@ export default function InvoiceDetail() {
   const [isSending, setIsSending] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [autoChaseEnabled, setAutoChaseEnabled] = useState(false);
+  const [showReviewPrompt, setShowReviewPrompt] = useState(false);
 
   // Scroll animation
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -864,11 +867,33 @@ export default function InvoiceDetail() {
         )}
 
         {invoice.status === "paid" && (
-          <View style={[styles.paidBanner, { backgroundColor: colors.statusPaid + "15" }]}>
-            <CheckCircle size={20} color={colors.statusPaid} />
-            <Text style={[typography.body, { color: colors.statusPaid, marginLeft: spacing.sm }]}>
-              Paid on {invoice.paid_at ? formatDate(invoice.paid_at) : "N/A"}
-            </Text>
+          <View style={styles.paidSection}>
+            <View style={[styles.paidBanner, { backgroundColor: colors.statusPaid + "15" }]}>
+              <CheckCircle size={20} color={colors.statusPaid} />
+              <Text style={[typography.body, { color: colors.statusPaid, marginLeft: spacing.sm }]}>
+                Paid on {invoice.paid_at ? formatDate(invoice.paid_at) : "N/A"}
+              </Text>
+            </View>
+            {/* Reputation Loop: Request Review Button */}
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setShowReviewPrompt(true);
+              }}
+              style={({ pressed }) => [
+                styles.requestReviewButton,
+                {
+                  backgroundColor: colors.systemOrange + "15",
+                  borderColor: colors.systemOrange + "30",
+                  opacity: pressed ? 0.8 : 1,
+                },
+              ]}
+            >
+              <Star size={18} color={colors.systemOrange} fill={colors.systemOrange} />
+              <Text style={[typography.footnote, { color: colors.systemOrange, fontWeight: "600", marginLeft: 8 }]}>
+                Request a Review
+              </Text>
+            </Pressable>
           </View>
         )}
 
@@ -880,6 +905,16 @@ export default function InvoiceDetail() {
           </View>
         )}
       </View>
+
+      {/* Reputation Loop: Review Prompt */}
+      <ReviewPrompt
+        visible={showReviewPrompt}
+        onDismiss={() => setShowReviewPrompt(false)}
+        contractorName={profile?.business_name || "your contractor"}
+        invoiceId={invoice.id}
+        clientEmail={invoice.client_email}
+        googlePlaceId={profile?.google_place_id}
+      />
     </SafeAreaView>
   );
 }
@@ -1022,12 +1057,23 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 12,
   },
+  paidSection: {
+    gap: 12,
+  },
   paidBanner: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     padding: 16,
     borderRadius: 12,
+  },
+  requestReviewButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
   },
   depositInfoBanner: {
     alignItems: "center",

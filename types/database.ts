@@ -30,6 +30,7 @@ export interface Database {
           address: string | null;
           logo_url: string | null;
           trade: string | null;
+          google_place_id: string | null; // For GMB review deep linking
           stripe_account_id: string | null;
           charges_enabled: boolean;
           payouts_enabled: boolean;
@@ -52,6 +53,7 @@ export interface Database {
           address?: string | null;
           logo_url?: string | null;
           trade?: string | null;
+          google_place_id?: string | null;
           stripe_account_id?: string | null;
           charges_enabled?: boolean;
           payouts_enabled?: boolean;
@@ -74,6 +76,7 @@ export interface Database {
           address?: string | null;
           logo_url?: string | null;
           trade?: string | null;
+          google_place_id?: string | null;
           stripe_account_id?: string | null;
           charges_enabled?: boolean;
           payouts_enabled?: boolean;
@@ -160,6 +163,9 @@ export interface Database {
           late_fee_enabled: boolean;
           late_fee_type: LateFeeType | null;
           late_fee_value: number | null;
+          // Living Document fields (per HYBRID_SPEC)
+          published_at: string | null; // When contractor "sent" the estimate/invoice
+          signature_url: string | null; // Client signature for deposit approval
           created_at: string;
           updated_at: string;
         };
@@ -201,6 +207,9 @@ export interface Database {
           late_fee_enabled?: boolean;
           late_fee_type?: LateFeeType | null;
           late_fee_value?: number | null;
+          // Living Document fields (per HYBRID_SPEC)
+          published_at?: string | null;
+          signature_url?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -242,6 +251,9 @@ export interface Database {
           late_fee_enabled?: boolean;
           late_fee_type?: LateFeeType | null;
           late_fee_value?: number | null;
+          // Living Document fields (per HYBRID_SPEC)
+          published_at?: string | null;
+          signature_url?: string | null;
           updated_at?: string;
         };
       };

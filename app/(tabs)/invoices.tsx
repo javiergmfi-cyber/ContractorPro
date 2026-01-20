@@ -70,14 +70,16 @@ const HEADER_MAX_HEIGHT = 120;
 const HEADER_MIN_HEIGHT = 60;
 const HEADER_SCROLL_DISTANCE = HEADER_MAX_HEIGHT - HEADER_MIN_HEIGHT;
 
-type FilterType = "all" | "unpaid" | "paid";
+type FilterType = "all" | "unpaid" | "drafts";
 
 /**
- * Invoices Screen - Apple Wallet Aesthetic
+ * Invoices Screen - The Workbench
+ * Per HYBRID_SPEC.md
+ *
  * Features:
- * - Collapsing Large Title (iOS Messages style)
- * - Segmented Control filter
- * - Physical ticket card design
+ * - Segmented Control: All | Unpaid | Drafts
+ * - Wallet Pass style cards
+ * - Collapsing Large Title
  */
 
 export default function InvoicesScreen() {
@@ -141,13 +143,13 @@ export default function InvoicesScreen() {
     setRefreshing(false);
   }, [fetchInvoices]);
 
-  // Filter invoices
+  // Filter invoices per HYBRID_SPEC: All | Unpaid | Drafts
   const filteredInvoices = invoices.filter((inv) => {
     switch (activeFilter) {
       case "unpaid":
-        return inv.status === "draft" || inv.status === "sent" || inv.status === "overdue";
-      case "paid":
-        return inv.status === "paid";
+        return inv.status === "sent" || inv.status === "overdue";
+      case "drafts":
+        return inv.status === "draft";
       default:
         return inv.status !== "void";
     }
@@ -183,12 +185,12 @@ export default function InvoicesScreen() {
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
 
-  // Counts for segmented control
+  // Counts for segmented control per HYBRID_SPEC
   const allCount = invoices.filter((i) => i.status !== "void").length;
   const unpaidCount = invoices.filter(
-    (i) => i.status === "draft" || i.status === "sent" || i.status === "overdue"
+    (i) => i.status === "sent" || i.status === "overdue"
   ).length;
-  const paidCount = invoices.filter((i) => i.status === "paid").length;
+  const draftsCount = invoices.filter((i) => i.status === "draft").length;
 
   const handleInvoicePress = (invoice: Invoice) => {
     router.push(`/invoice/${invoice.id}`);
@@ -480,9 +482,9 @@ export default function InvoicesScreen() {
         ═══════════════════════════════════════════════════════════ */}
         <View style={styles.segmentedControlContainer}>
           <View style={[styles.segmentedControl, { backgroundColor: colors.backgroundSecondary }]}>
-            {(["all", "unpaid", "paid"] as FilterType[]).map((filter) => {
+            {(["all", "unpaid", "drafts"] as FilterType[]).map((filter) => {
               const isActive = activeFilter === filter;
-              const count = filter === "all" ? allCount : filter === "unpaid" ? unpaidCount : paidCount;
+              const count = filter === "all" ? allCount : filter === "unpaid" ? unpaidCount : draftsCount;
 
               return (
                 <Pressable

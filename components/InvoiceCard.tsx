@@ -33,6 +33,47 @@ import { Invoice, InvoiceStatus, formatCurrency, formatRelativeDate } from "@/ty
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 /**
+ * Living Document Labels - Per HYBRID_SPEC.md
+ * One Invoice object morphs through states via status/deposit info
+ */
+type DocumentTypeLabel = "DRAFT" | "ESTIMATE" | "INVOICE" | "RECEIPT";
+
+function getDocumentTypeLabel(invoice: Invoice): DocumentTypeLabel {
+  // Fully paid → RECEIPT
+  if (invoice.status === "paid") {
+    return "RECEIPT";
+  }
+
+  // Deposit paid, balance remaining → INVOICE
+  if (invoice.status === "deposit_paid" ||
+      (invoice.deposit_enabled && (invoice.amount_paid || 0) > 0 && invoice.status !== "paid")) {
+    return "INVOICE";
+  }
+
+  // Sent but no payment yet → ESTIMATE (awaiting deposit/approval)
+  if (invoice.status === "sent" || invoice.status === "overdue") {
+    return "ESTIMATE";
+  }
+
+  // Not yet sent → DRAFT
+  return "DRAFT";
+}
+
+function getDocumentTypeColor(label: DocumentTypeLabel, colors: any): { bg: string; text: string } {
+  switch (label) {
+    case "RECEIPT":
+      return { bg: colors.statusPaid + "20", text: colors.statusPaid };
+    case "INVOICE":
+      return { bg: colors.systemOrange + "20", text: colors.systemOrange };
+    case "ESTIMATE":
+      return { bg: colors.statusSent + "20", text: colors.statusSent };
+    case "DRAFT":
+    default:
+      return { bg: colors.textTertiary + "20", text: colors.textTertiary };
+  }
+}
+
+/**
  * InvoiceCard Component - Apple Wallet Aesthetic + Haptic Touch
  *
  * Features:
@@ -110,6 +151,10 @@ export function InvoiceCard({
   const isDepositPaid = invoice.status === "deposit_paid" || (hasDepositInfo && (invoice.amount_paid || 0) > 0);
 
   const statusDotColor = getStatusDotColor(invoice.status);
+
+  // Living Document label
+  const documentTypeLabel = getDocumentTypeLabel(invoice);
+  const documentTypeColors = getDocumentTypeColor(documentTypeLabel, colors);
 
   // Build menu actions based on invoice status
   const getMenuActions = useCallback((): MenuAction[] => {
@@ -469,15 +514,17 @@ export function InvoiceCard({
 
               {/* Status Indicators (Top Right) */}
               <View style={styles.statusIndicators}>
-                {/* Deposit Paid Pill */}
-                {isDepositPaid && invoice.status !== "paid" && (
-                  <View style={[styles.depositPill, { backgroundColor: colors.systemOrange + "18" }]}>
-                    <DollarSign size={10} color={colors.systemOrange} strokeWidth={2.5} />
-                    <Text style={[styles.depositPillText, { color: colors.systemOrange }]}>
-                      Deposit Paid
-                    </Text>
-                  </View>
-                )}
+                {/* Living Document Type Label - DRAFT/ESTIMATE/INVOICE/RECEIPT */}
+                <View
+                  style={[
+                    styles.documentTypeBadge,
+                    { backgroundColor: documentTypeColors.bg },
+                  ]}
+                >
+                  <Text style={[styles.documentTypeBadgeText, { color: documentTypeColors.text }]}>
+                    {documentTypeLabel}
+                  </Text>
+                </View>
 
                 {/* Viewed Pill - PRO feature surfaced (only show if not deposit paid) */}
                 {isViewed && invoice.status !== "paid" && !isDepositPaid && (
@@ -610,12 +657,17 @@ export function InvoiceCard({
               {invoice.client_name}
             </Text>
             <View style={styles.statusIndicators}>
-              {isDepositPaid && invoice.status !== "paid" && (
-                <View style={[styles.depositPill, { backgroundColor: colors.systemOrange + "18" }]}>
-                  <DollarSign size={10} color={colors.systemOrange} strokeWidth={2.5} />
-                  <Text style={[styles.depositPillText, { color: colors.systemOrange }]}>Deposit Paid</Text>
-                </View>
-              )}
+              {/* Living Document Type Label */}
+              <View
+                style={[
+                  styles.documentTypeBadge,
+                  { backgroundColor: documentTypeColors.bg },
+                ]}
+              >
+                <Text style={[styles.documentTypeBadgeText, { color: documentTypeColors.text }]}>
+                  {documentTypeLabel}
+                </Text>
+              </View>
               {isViewed && invoice.status !== "paid" && !isDepositPaid && (
                 <View style={[styles.viewedPill, { backgroundColor: colors.statusPaid + "18" }]}>
                   <Eye size={10} color={colors.statusPaid} strokeWidth={2.5} />
@@ -730,6 +782,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+  },
+  documentTypeBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  documentTypeBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.5,
   },
   viewedPill: {
     flexDirection: "row",

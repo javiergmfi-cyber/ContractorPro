@@ -242,6 +242,52 @@ async function handlePaymentSuccess(
   }
 
   console.log(`Payment recorded: ${paymentType} of ${paymentAmount} for invoice ${invoiceId}`);
+
+  // =========================================================================
+  // LIVING DOCUMENT AUTO-CONVERT LOGIC (Per HYBRID_SPEC.md)
+  // =========================================================================
+  const { data: updatedInvoice } = await supabase
+    .from("invoices")
+    .select("total, amount_paid, status, client_name, client_email, user_id")
+    .eq("id", invoiceId)
+    .single();
+
+  if (updatedInvoice) {
+    const remainingBalance = updatedInvoice.total - (updatedInvoice.amount_paid || 0);
+
+    if (remainingBalance > 0 && paymentType === "deposit") {
+      // Deposit paid but balance remaining → "Work Starting" notification
+      console.log(`Invoice ${invoiceId} deposit paid, work starting. Remaining: ${remainingBalance}`);
+      await supabase.from("activity_events").insert({
+        user_id: updatedInvoice.user_id,
+        type: "work_starting",
+        invoice_id: invoiceId,
+        client_name: updatedInvoice.client_name,
+        amount: paymentAmount,
+        metadata: {
+          remaining_balance: remainingBalance,
+          client_email: updatedInvoice.client_email,
+          trigger: "deposit_paid",
+        },
+      });
+      // TODO: Send "Work Starting" email to contractor and client
+    } else if (remainingBalance <= 0) {
+      // Fully paid → Trigger Instant Reputation Loop
+      console.log(`Invoice ${invoiceId} fully paid. Triggering reputation loop.`);
+      await supabase.from("activity_events").insert({
+        user_id: updatedInvoice.user_id,
+        type: "reputation_loop_trigger",
+        invoice_id: invoiceId,
+        client_name: updatedInvoice.client_name,
+        amount: updatedInvoice.total,
+        metadata: {
+          client_email: updatedInvoice.client_email,
+          trigger: "fully_paid",
+        },
+      });
+      // TODO: Phase 4 - Send review prompt to client
+    }
+  }
 }
 
 /**
@@ -333,6 +379,44 @@ async function handleCheckoutSuccess(
   });
 
   console.log(`Checkout payment recorded: ${paymentType} of ${paymentAmount}`);
+
+  // LIVING DOCUMENT AUTO-CONVERT (same as PaymentIntent)
+  const { data: updatedInvoice } = await supabase
+    .from("invoices")
+    .select("total, amount_paid, client_name, client_email, user_id")
+    .eq("id", invoiceId)
+    .single();
+
+  if (updatedInvoice) {
+    const remainingBalance = updatedInvoice.total - (updatedInvoice.amount_paid || 0);
+
+    if (remainingBalance > 0 && paymentType === "deposit") {
+      await supabase.from("activity_events").insert({
+        user_id: updatedInvoice.user_id,
+        type: "work_starting",
+        invoice_id: invoiceId,
+        client_name: updatedInvoice.client_name,
+        amount: paymentAmount,
+        metadata: {
+          remaining_balance: remainingBalance,
+          client_email: updatedInvoice.client_email,
+          trigger: "deposit_paid",
+        },
+      });
+    } else if (remainingBalance <= 0) {
+      await supabase.from("activity_events").insert({
+        user_id: updatedInvoice.user_id,
+        type: "reputation_loop_trigger",
+        invoice_id: invoiceId,
+        client_name: updatedInvoice.client_name,
+        amount: updatedInvoice.total,
+        metadata: {
+          client_email: updatedInvoice.client_email,
+          trigger: "fully_paid",
+        },
+      });
+    }
+  }
 }
 
 /**

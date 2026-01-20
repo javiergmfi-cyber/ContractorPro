@@ -6,13 +6,19 @@ import * as Haptics from "expo-haptics";
 import { BlurView } from "expo-blur";
 
 /**
- * Tab Layout - Glass Effect Navigation
+ * Tab Layout - Cash Flow Engine Navigation
+ *
+ * Per HYBRID_SPEC.md:
+ * - Tab 1: "Home" (Cash Flow overview)
+ * - Tab 2: "Invoices" (Workbench)
+ * - Tab 3: "Clients" (CRM)
+ * - Tab 4: "Business" (Settings/Branding)
  *
  * Features:
- * - Frosted glass tab bar (position: absolute)
+ * - Frosted glass tab bar (Glassmorphism)
+ * - Active color: Green (#00D632)
  * - SF Symbols style icons (thicker stroke when active)
  * - Haptic feedback on tab switch
- * - Safe Area handling for Home Indicator
  */
 
 export default function TabLayout() {
@@ -82,7 +88,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Dashboard",
+          title: "Home",
           tabBarIcon: ({ color, focused }) => (
             <View style={focused ? styles.activeIconContainer : styles.iconContainer}>
               <Home
@@ -133,7 +139,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          title: "Profile",
+          title: "Business",
           tabBarIcon: ({ color, focused }) => (
             <View style={focused ? styles.activeIconContainer : styles.iconContainer}>
               <User

@@ -1,20 +1,22 @@
 /**
  * Customer Invoice/Payment Page Edge Function
+ * Per HYBRID_SPEC.md - Smart Fee Passing & ACH Threshold
  *
  * ONE LINK / TWO PAY BUTTONS System
- * Same URL handles all 3 states:
+ * Same URL handles all states:
  * - A) No deposit: "Pay $Total"
  * - B) Deposit enabled, not paid: "Approve & Pay Deposit" + "Approve Only"
  * - C) Deposit paid: "Pay Remaining $Y"
  *
- * URL format: /track-invoice-view?id=[tracking_id]
+ * SMART FEE PASSING:
+ * - Free users: Contractor absorbs 3.5% (shown as "Processing Fee: Included")
+ * - Pro users: Client pays 3.5% surcharge (shown as "Processing Fee: $XX")
  *
- * Handles:
- * - GET: Renders payment page (logs view first time)
- * - POST action=approve_only: Sets approved_at, no payment
- * - POST action=pay_deposit: Creates Stripe session for deposit
- * - POST action=pay_balance: Creates Stripe session for remaining balance
- * - POST action=pay_full: Creates Stripe session for full amount
+ * ACH THRESHOLD:
+ * - < $2,500: ACH hidden (force card)
+ * - >= $2,500: ACH shown with $10 flat fee + delay warning
+ *
+ * URL format: /track-invoice-view?id=[tracking_id]
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -31,12 +33,15 @@ const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-// Platform fee: 0.5% of each transaction goes to platform
-// Implemented via Stripe Connect application_fee_amount
-// - Customer sees only the total (fee not itemized)
-// - Contractor receives payment minus Stripe fees minus platform fee
-// - Disclosed in Terms of Service
-const PLATFORM_FEE_PERCENT = 0.005;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SMART FEE PASSING CONSTANTS (Per HYBRID_SPEC)
+// ═══════════════════════════════════════════════════════════════════════════
+// Platform + Stripe fee bundled as "Card Processing"
+// 3.5% total = ~2.9% Stripe + ~0.5% Platform margin
+const CARD_SURCHARGE_PERCENT = 0.035; // 3.5%
+const ACH_FLAT_FEE = 1000; // $10.00 in cents
+const ACH_THRESHOLD = 250000; // $2,500.00 in cents (hide ACH below this)
 
 interface Invoice {
   id: string;
@@ -61,6 +66,7 @@ interface Profile {
   charges_enabled: boolean;
   business_name: string | null;
   logo_url: string | null;
+  is_pro: boolean; // Added for Smart Fee Passing
 }
 
 // Helper: Calculate remaining balance
@@ -76,6 +82,11 @@ function formatCurrency(cents: number, currency: string = "USD"): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(cents / 100);
+}
+
+// Helper: Calculate surcharge for card payments
+function calculateCardSurcharge(amount: number): number {
+  return Math.round(amount * CARD_SURCHARGE_PERCENT);
 }
 
 // Helper: Determine payment state
@@ -97,18 +108,52 @@ function getPaymentState(invoice: Invoice): "no_deposit" | "deposit_pending" | "
 }
 
 // Render the customer payment page HTML
-function renderPaymentPage(invoice: Invoice, profile: Profile, baseUrl: string, message?: string): string {
+function renderPaymentPage(
+  invoice: Invoice,
+  profile: Profile,
+  baseUrl: string,
+  message?: string
+): string {
   const state = getPaymentState(invoice);
   const remainingBalance = getRemainingBalance(invoice);
   const depositAmount = invoice.deposit_amount || 0;
   const businessName = profile.business_name || "Business";
+  const isPro = profile.is_pro || false;
+
+  // Determine the base amount for this payment
+  let paymentAmount = 0;
+  let paymentType = "full";
+
+  switch (state) {
+    case "no_deposit":
+      paymentAmount = invoice.total;
+      paymentType = "full";
+      break;
+    case "deposit_pending":
+      paymentAmount = depositAmount;
+      paymentType = "deposit";
+      break;
+    case "deposit_paid":
+      paymentAmount = remainingBalance;
+      paymentType = "balance";
+      break;
+  }
+
+  // Calculate card surcharge
+  const cardSurcharge = calculateCardSurcharge(paymentAmount);
+  const cardTotal = isPro ? paymentAmount + cardSurcharge : paymentAmount;
+
+  // ACH visibility (only for amounts >= $2,500)
+  const showAch = paymentAmount >= ACH_THRESHOLD;
+  const achTotal = paymentAmount + ACH_FLAT_FEE;
 
   // Determine what to show based on state
   let heroTitle = "";
   let heroSubtitle = "";
   let primaryButton = "";
-  let secondaryButton = "";
+  let achButton = "";
   let statusBadge = "";
+  let feeDisclosure = "";
 
   switch (state) {
     case "fully_paid":
@@ -118,67 +163,127 @@ function renderPaymentPage(invoice: Invoice, profile: Profile, baseUrl: string, 
       break;
 
     case "no_deposit":
-      heroTitle = formatCurrency(invoice.total, invoice.currency);
-      heroSubtitle = `Invoice from ${businessName}`;
-      primaryButton = `
-        <form method="POST" action="${baseUrl}">
-          <input type="hidden" name="id" value="${invoice.tracking_id}">
-          <input type="hidden" name="action" value="pay_full">
-          <button type="submit" class="btn btn-primary">
-            Pay ${formatCurrency(invoice.total, invoice.currency)}
-          </button>
-        </form>
-      `;
-      break;
-
     case "deposit_pending":
-      heroTitle = formatCurrency(depositAmount, invoice.currency);
-      heroSubtitle = `Deposit requested by ${businessName}`;
-      statusBadge = `<div class="status-badge pending">Awaiting Approval</div>`;
-      primaryButton = `
-        <form method="POST" action="${baseUrl}">
-          <input type="hidden" name="id" value="${invoice.tracking_id}">
-          <input type="hidden" name="action" value="pay_deposit">
-          <button type="submit" class="btn btn-primary">
-            Approve & Pay Deposit ${formatCurrency(depositAmount, invoice.currency)}
-          </button>
-        </form>
-      `;
-      secondaryButton = `
-        <form method="POST" action="${baseUrl}" class="secondary-form">
-          <input type="hidden" name="id" value="${invoice.tracking_id}">
-          <input type="hidden" name="action" value="approve_only">
-          <button type="submit" class="btn btn-secondary">
-            Approve Only (Pay Later)
-          </button>
-        </form>
-      `;
-      break;
+    case "deposit_paid": {
+      heroTitle = formatCurrency(paymentAmount, invoice.currency);
+      heroSubtitle = state === "deposit_pending"
+        ? `Deposit requested by ${businessName}`
+        : state === "deposit_paid"
+        ? `Balance due to ${businessName}`
+        : `Invoice from ${businessName}`;
 
-    case "deposit_paid":
-      heroTitle = formatCurrency(remainingBalance, invoice.currency);
-      heroSubtitle = `Balance due to ${businessName}`;
-      statusBadge = `
-        <div class="status-badge deposit-paid">
-          ✓ Deposit Paid ${formatCurrency(invoice.amount_paid, invoice.currency)}
-        </div>
-      `;
+      if (state === "deposit_pending") {
+        statusBadge = `<div class="status-badge pending">Awaiting Approval</div>`;
+      } else if (state === "deposit_paid") {
+        statusBadge = `
+          <div class="status-badge deposit-paid">
+            ✓ Deposit Paid ${formatCurrency(invoice.amount_paid, invoice.currency)}
+          </div>
+        `;
+      }
+
+      // Fee disclosure for card payment
+      if (isPro) {
+        feeDisclosure = `
+          <div class="fee-disclosure">
+            <span>Processing Fee</span>
+            <span class="fee-amount">${formatCurrency(cardSurcharge, invoice.currency)}</span>
+          </div>
+        `;
+      } else {
+        feeDisclosure = `
+          <div class="fee-disclosure">
+            <span>Processing Fee</span>
+            <span class="fee-included">Included</span>
+          </div>
+        `;
+      }
+
+      // Primary Card Button (Big, Hero)
+      const actionValue = state === "deposit_pending" ? "pay_deposit"
+        : state === "deposit_paid" ? "pay_balance" : "pay_full";
+
       primaryButton = `
         <form method="POST" action="${baseUrl}">
           <input type="hidden" name="id" value="${invoice.tracking_id}">
-          <input type="hidden" name="action" value="pay_balance">
-          <button type="submit" class="btn btn-primary">
-            Pay Remaining ${formatCurrency(remainingBalance, invoice.currency)}
+          <input type="hidden" name="action" value="${actionValue}">
+          <input type="hidden" name="method" value="card">
+          <button type="submit" class="btn btn-primary btn-card">
+            <span class="btn-icon">💳</span>
+            <span class="btn-content">
+              <span class="btn-label">Pay with Card</span>
+              <span class="btn-sublabel">Instant • Earn Points • ${formatCurrency(cardTotal, invoice.currency)}</span>
+            </span>
           </button>
         </form>
+        ${feeDisclosure}
       `;
+
+      // ACH Button (Small, Hidden for < $2,500)
+      if (showAch) {
+        achButton = `
+          <div class="ach-section">
+            <button type="button" class="btn-ach-link" onclick="showAchWarning()">
+              Need to pay via bank transfer?
+            </button>
+          </div>
+
+          <!-- ACH Warning Modal -->
+          <div id="ach-modal" class="modal hidden">
+            <div class="modal-overlay" onclick="hideAchWarning()"></div>
+            <div class="modal-content">
+              <div class="modal-icon">⚠️</div>
+              <h3>Bank Transfers Take 5-7 Business Days</h3>
+              <p>Your project start date may be delayed until funds are verified.</p>
+              <div class="modal-actions">
+                <button type="button" class="btn btn-primary" onclick="hideAchWarning()">
+                  Go Back & Pay with Card (Instant)
+                </button>
+                <form method="POST" action="${baseUrl}" style="margin-top: 12px;">
+                  <input type="hidden" name="id" value="${invoice.tracking_id}">
+                  <input type="hidden" name="action" value="${actionValue}">
+                  <input type="hidden" name="method" value="ach">
+                  <button type="submit" class="btn btn-secondary">
+                    Continue to Bank Transfer (+$10 fee)
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          <script>
+            function showAchWarning() {
+              document.getElementById('ach-modal').classList.remove('hidden');
+              document.body.style.overflow = 'hidden';
+            }
+            function hideAchWarning() {
+              document.getElementById('ach-modal').classList.add('hidden');
+              document.body.style.overflow = '';
+            }
+          </script>
+        `;
+      }
+
+      // Secondary "Approve Only" for deposits
+      if (state === "deposit_pending") {
+        primaryButton += `
+          <form method="POST" action="${baseUrl}" class="secondary-form">
+            <input type="hidden" name="id" value="${invoice.tracking_id}">
+            <input type="hidden" name="action" value="approve_only">
+            <button type="submit" class="btn btn-secondary">
+              Approve Only (Pay Later)
+            </button>
+          </form>
+        `;
+      }
       break;
+    }
   }
 
-  // Build line items display (simplified - would need to fetch actual items)
+  // Build line items display
   const totalRow = `
     <div class="total-row">
-      <span>Total</span>
+      <span>Invoice Total</span>
       <span class="total-amount">${formatCurrency(invoice.total, invoice.currency)}</span>
     </div>
   `;
@@ -395,6 +500,41 @@ function renderPaymentPage(invoice: Invoice, profile: Profile, baseUrl: string, 
       opacity: 0.95;
     }
 
+    /* Card Payment Button - Hero Style */
+    .btn-card {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      text-align: left;
+      padding: 20px 24px;
+      background: linear-gradient(135deg, #34C759 0%, #30B350 100%);
+      color: #FFFFFF;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(52, 199, 89, 0.3);
+    }
+
+    .btn-icon {
+      font-size: 28px;
+    }
+
+    .btn-content {
+      flex: 1;
+    }
+
+    .btn-label {
+      display: block;
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .btn-sublabel {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      opacity: 0.9;
+    }
+
     .btn-secondary {
       background: transparent;
       color: rgba(255,255,255,0.6);
@@ -407,7 +547,105 @@ function renderPaymentPage(invoice: Invoice, profile: Profile, baseUrl: string, 
     }
 
     .secondary-form {
-      margin-top: 0;
+      margin-top: 12px;
+    }
+
+    /* Fee Disclosure */
+    .fee-disclosure {
+      display: flex;
+      justify-content: space-between;
+      padding: 12px 16px;
+      margin-top: 12px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.5);
+    }
+
+    .fee-amount {
+      color: rgba(255,255,255,0.7);
+    }
+
+    .fee-included {
+      color: #34C759;
+      font-weight: 500;
+    }
+
+    /* ACH Section */
+    .ach-section {
+      text-align: center;
+      padding: 24px 0 0;
+    }
+
+    .btn-ach-link {
+      background: none;
+      border: none;
+      color: rgba(255,255,255,0.4);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: underline;
+      padding: 8px;
+    }
+
+    .btn-ach-link:hover {
+      color: rgba(255,255,255,0.6);
+    }
+
+    /* ACH Warning Modal */
+    .modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .modal.hidden {
+      display: none;
+    }
+
+    .modal-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.8);
+    }
+
+    .modal-content {
+      position: relative;
+      background: #2C2C2E;
+      border-radius: 20px;
+      padding: 32px 24px;
+      max-width: 360px;
+      text-align: center;
+    }
+
+    .modal-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+
+    .modal-content h3 {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .modal-content p {
+      font-size: 15px;
+      color: rgba(255,255,255,0.6);
+      margin-bottom: 24px;
+    }
+
+    .modal-actions {
+      display: flex;
+      flex-direction: column;
     }
 
     .message {
@@ -451,71 +689,8 @@ function renderPaymentPage(invoice: Invoice, profile: Profile, baseUrl: string, 
         font-size: 44px;
       }
     }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <div class="logo">
-        ${profile.logo_url
-          ? `<img src="${profile.logo_url}" alt="${businessName}">`
-          : businessName.charAt(0).toUpperCase()
-        }
-      </div>
-      <div class="business-name">${businessName}</div>
-      <div class="invoice-number">Invoice ${invoice.invoice_number}</div>
-    </div>
 
-    ${messageHtml}
-
-    <div class="hero">
-      <div class="hero-title">${heroTitle}</div>
-      <div class="hero-subtitle">${heroSubtitle}</div>
-      ${statusBadge}
-    </div>
-
-    <div class="card">
-      <div class="client-info" style="margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.1);">
-        <div style="font-size: 13px; color: rgba(255,255,255,0.4); margin-bottom: 4px;">Bill To</div>
-        <div style="font-weight: 600;">${invoice.client_name}</div>
-      </div>
-      ${totalRow}
-      ${paymentBreakdown}
-    </div>
-
-    <div class="actions">
-      ${primaryButton}
-      ${secondaryButton}
-    </div>
-
-    <div class="secure-badge">
-      <svg width="12" height="14" viewBox="0 0 12 14" fill="currentColor">
-        <path d="M6 0L0 2.5V6.5C0 10.1 2.6 13.4 6 14C9.4 13.4 12 10.1 12 6.5V2.5L6 0Z"/>
-      </svg>
-      Secured by Stripe
-    </div>
-
-    <div class="footer">
-      <p>Questions? Contact ${businessName}</p>
-      <p style="margin-top: 8px;">Powered by <a href="https://contractorpro.app">ContractorPro</a></p>
-    </div>
-
-    <!-- Referral Banner for Contractors -->
-    <div class="referral-section">
-      <div class="referral-card">
-        <div class="referral-emoji">🔨</div>
-        <div class="referral-text">
-          <div class="referral-title">Are you a contractor?</div>
-          <div class="referral-subtitle">Send invoices like this in 60 seconds. Get paid faster.</div>
-        </div>
-        <a href="https://contractorpro.app/r?ref=payment&src=${invoice.tracking_id}" class="referral-button">
-          Try Free
-        </a>
-      </div>
-    </div>
-  </div>
-
-  <style>
+    /* Referral Section */
     .referral-section {
       padding: 0 0 24px 0;
     }
@@ -561,6 +736,68 @@ function renderPaymentPage(invoice: Invoice, profile: Profile, baseUrl: string, 
       transform: scale(0.96);
     }
   </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">
+        ${profile.logo_url
+          ? `<img src="${profile.logo_url}" alt="${businessName}">`
+          : businessName.charAt(0).toUpperCase()
+        }
+      </div>
+      <div class="business-name">${businessName}</div>
+      <div class="invoice-number">Invoice ${invoice.invoice_number}</div>
+    </div>
+
+    ${messageHtml}
+
+    <div class="hero">
+      <div class="hero-title">${heroTitle}</div>
+      <div class="hero-subtitle">${heroSubtitle}</div>
+      ${statusBadge}
+    </div>
+
+    <div class="card">
+      <div class="client-info" style="margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.1);">
+        <div style="font-size: 13px; color: rgba(255,255,255,0.4); margin-bottom: 4px;">Bill To</div>
+        <div style="font-weight: 600;">${invoice.client_name}</div>
+      </div>
+      ${totalRow}
+      ${paymentBreakdown}
+    </div>
+
+    <div class="actions">
+      ${primaryButton}
+      ${achButton}
+    </div>
+
+    <div class="secure-badge">
+      <svg width="12" height="14" viewBox="0 0 12 14" fill="currentColor">
+        <path d="M6 0L0 2.5V6.5C0 10.1 2.6 13.4 6 14C9.4 13.4 12 10.1 12 6.5V2.5L6 0Z"/>
+      </svg>
+      Secured by Stripe
+    </div>
+
+    <div class="footer">
+      <p>Questions? Contact ${businessName}</p>
+      <p style="margin-top: 8px;">Powered by <a href="https://contractorpro.app">ContractorPro</a></p>
+    </div>
+
+    <!-- Referral Banner for Contractors -->
+    <div class="referral-section">
+      <div class="referral-card">
+        <div class="referral-emoji">🔨</div>
+        <div class="referral-text">
+          <div class="referral-title">Are you a contractor?</div>
+          <div class="referral-subtitle">Send invoices like this in 60 seconds. Get paid faster.</div>
+        </div>
+        <a href="https://contractorpro.app/r?ref=payment&src=${invoice.tracking_id}" class="referral-button">
+          Try Free
+        </a>
+      </div>
+    </div>
+  </div>
 </body>
 </html>`;
 }
@@ -579,11 +816,13 @@ Deno.serve(async (req) => {
     // Get tracking ID from either query params (GET) or form body (POST)
     let trackingId: string | null = null;
     let action: string | null = null;
+    let paymentMethod: string | null = null; // 'card' or 'ach'
 
     if (req.method === "POST") {
       const formData = await req.formData();
       trackingId = formData.get("id") as string;
       action = formData.get("action") as string;
+      paymentMethod = formData.get("method") as string || "card";
     } else {
       trackingId = url.searchParams.get("id");
     }
@@ -625,12 +864,23 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get the profile for business info and Stripe account
+    // Get the profile for business info, Stripe account, and Pro status
+    // Check subscriptions table to determine if user is Pro
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("stripe_account_id, charges_enabled, business_name, logo_url")
       .eq("id", invoice.user_id)
       .single();
+
+    // Check if user has active Pro subscription
+    const { data: subscription } = await supabase
+      .from("subscriptions")
+      .select("status")
+      .eq("user_id", invoice.user_id)
+      .eq("status", "active")
+      .single();
+
+    const isPro = subscription?.status === "active";
 
     if (profileError || !profile) {
       console.error("Profile not found:", profileError);
@@ -645,6 +895,9 @@ Deno.serve(async (req) => {
         }
       );
     }
+
+    // Add isPro to profile object
+    const profileWithPro: Profile = { ...profile, is_pro: isPro };
 
     // Log view event (only for GET requests, once per day)
     if (req.method === "GET") {
@@ -686,7 +939,7 @@ Deno.serve(async (req) => {
       // Validate Stripe is connected
       if (!profile.stripe_account_id || !profile.charges_enabled) {
         return new Response(
-          renderPaymentPage(invoice as Invoice, profile as Profile, baseUrl,
+          renderPaymentPage(invoice as Invoice, profileWithPro, baseUrl,
             "Payment processing is not available. Please contact the business."),
           { headers: { ...corsHeaders, "Content-Type": "text/html" } }
         );
@@ -718,7 +971,7 @@ Deno.serve(async (req) => {
             .single();
 
           return new Response(
-            renderPaymentPage(updatedInvoice as Invoice, profile as Profile, baseUrl,
+            renderPaymentPage(updatedInvoice as Invoice, profileWithPro, baseUrl,
               "Invoice approved! You can pay the deposit anytime using this link."),
             { headers: { ...corsHeaders, "Content-Type": "text/html" } }
           );
@@ -727,28 +980,64 @@ Deno.serve(async (req) => {
         case "pay_deposit":
         case "pay_balance":
         case "pay_full": {
-          // Determine amount to charge
-          let chargeAmount: number;
+          // Determine base amount to charge
+          let baseAmount: number;
           let paymentType: string;
           let description: string;
 
           if (action === "pay_deposit") {
-            chargeAmount = invoice.deposit_amount || invoice.total;
+            baseAmount = invoice.deposit_amount || invoice.total;
             paymentType = "deposit";
             description = `Deposit for Invoice ${invoice.invoice_number}`;
           } else if (action === "pay_balance") {
-            chargeAmount = getRemainingBalance(invoice as Invoice);
+            baseAmount = getRemainingBalance(invoice as Invoice);
             paymentType = "balance";
             description = `Balance for Invoice ${invoice.invoice_number}`;
           } else {
-            chargeAmount = invoice.total;
+            baseAmount = invoice.total;
             paymentType = "full";
             description = `Invoice ${invoice.invoice_number}`;
           }
 
+          // ═══════════════════════════════════════════════════════════════
+          // SMART FEE PASSING (Per HYBRID_SPEC)
+          // ═══════════════════════════════════════════════════════════════
+          let chargeAmount: number;
+          let applicationFee: number;
+          const isCard = paymentMethod === "card";
+          const isAch = paymentMethod === "ach";
+
+          if (isCard) {
+            // Card payment: Add 3.5% surcharge for Pro users
+            const cardSurcharge = calculateCardSurcharge(baseAmount);
+
+            if (isPro) {
+              // Pro user: Client pays surcharge, contractor gets full base amount
+              chargeAmount = baseAmount + cardSurcharge;
+              // Platform keeps the surcharge minus Stripe's cut
+              // Stripe takes ~2.9% + $0.30 from the total
+              // We take the full surcharge as application_fee
+              // Stripe deducts their fees from our application_fee
+              applicationFee = cardSurcharge;
+            } else {
+              // Free user: Client pays base amount, contractor absorbs fees
+              chargeAmount = baseAmount;
+              // Small platform fee (0.5%) to keep some margin
+              applicationFee = Math.round(baseAmount * 0.005);
+            }
+          } else if (isAch) {
+            // ACH payment: Add $10 flat fee
+            chargeAmount = baseAmount + ACH_FLAT_FEE;
+            // Platform keeps $5 of the $10 fee
+            applicationFee = 500;
+          } else {
+            // Default to card behavior
+            chargeAmount = baseAmount;
+            applicationFee = Math.round(baseAmount * 0.005);
+          }
+
           // 5.4 PREVENT $0 PAYMENT SESSIONS
           if (chargeAmount <= 0) {
-            // Re-fetch to get latest state and show paid message
             const { data: latestInvoice } = await supabase
               .from("invoices")
               .select("*")
@@ -758,7 +1047,7 @@ Deno.serve(async (req) => {
             return new Response(
               renderPaymentPage(
                 (latestInvoice || invoice) as Invoice,
-                profile as Profile,
+                profileWithPro,
                 baseUrl,
                 "This invoice has already been paid in full. Thank you!"
               ),
@@ -766,19 +1055,21 @@ Deno.serve(async (req) => {
             );
           }
 
-          // Create Stripe Checkout Session
-          const platformFee = Math.round(chargeAmount * PLATFORM_FEE_PERCENT);
+          // Create Stripe Checkout Session with payment method types
+          const paymentMethodTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] =
+            isAch ? ["us_bank_account"] : ["card"];
 
           const session = await stripe.checkout.sessions.create(
             {
               mode: "payment",
+              payment_method_types: paymentMethodTypes,
               line_items: [
                 {
                   price_data: {
                     currency: invoice.currency.toLowerCase(),
                     product_data: {
                       name: description,
-                      description: `Payment to ${profile.business_name || "Contractor"}`,
+                      description: `Payment to ${profile.business_name || "Contractor"}${isAch ? " (Bank Transfer)" : ""}`,
                     },
                     unit_amount: chargeAmount,
                   },
@@ -786,12 +1077,16 @@ Deno.serve(async (req) => {
                 },
               ],
               payment_intent_data: {
-                application_fee_amount: platformFee,
+                application_fee_amount: applicationFee,
                 metadata: {
                   supabase_invoice_id: invoice.id,
                   supabase_user_id: invoice.user_id,
                   payment_type: paymentType,
+                  payment_method: paymentMethod || "card",
                   invoice_number: invoice.invoice_number,
+                  base_amount: baseAmount.toString(),
+                  surcharge: (chargeAmount - baseAmount).toString(),
+                  is_pro: isPro.toString(),
                 },
               },
               metadata: {
@@ -864,7 +1159,7 @@ Deno.serve(async (req) => {
     return new Response(
       renderPaymentPage(
         (latestInvoice || invoice) as Invoice,
-        profile as Profile,
+        profileWithPro,
         baseUrl,
         message
       ),
