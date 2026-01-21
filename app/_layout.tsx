@@ -12,6 +12,7 @@ import { AnimatedSplash } from "../components/AnimatedSplash";
 import { FirstTimeTutorial } from "../components/tutorial/FirstTimeTutorial";
 import { useErrorStore } from "../store/useErrorStore";
 import { useTutorialStore, CURRENT_TUTORIAL_VERSION } from "../store/useTutorialStore";
+import { useOnboardingStore } from "../store/useOnboardingStore";
 import { useNotifications } from "../hooks/useNotifications";
 import "../global.css";
 
@@ -19,21 +20,30 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const { session, isLoading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  const { hasCalibrated } = useOnboardingStore();
 
   useEffect(() => {
     if (isLoading) return;
 
     const inAuthGroup = segments[0] === "(auth)";
     const inDemoRoute = segments[0] === "demo";
+    const inOnboardingGroup = segments[0] === "onboarding";
 
     if (!session && !inAuthGroup && !inDemoRoute) {
       // Redirect to login if not authenticated (except demo route)
       router.replace("/(auth)/login");
     } else if (session && inAuthGroup) {
-      // Redirect to home if authenticated and trying to access auth screens
-      router.replace("/(tabs)");
+      // Redirect to calibration or home if authenticated and trying to access auth screens
+      if (!hasCalibrated) {
+        router.replace("/onboarding/calibration");
+      } else {
+        router.replace("/(tabs)");
+      }
+    } else if (session && !hasCalibrated && !inOnboardingGroup && !inAuthGroup) {
+      // Redirect to calibration if authenticated but hasn't calibrated
+      router.replace("/onboarding/calibration");
     }
-  }, [session, isLoading, segments]);
+  }, [session, isLoading, segments, hasCalibrated]);
 
   if (isLoading) {
     return (
@@ -95,6 +105,12 @@ function RootLayoutContent() {
           }}
         >
           <Stack.Screen name="(auth)" />
+          <Stack.Screen
+            name="onboarding"
+            options={{
+              animation: "fade",
+            }}
+          />
           <Stack.Screen name="(tabs)" />
           <Stack.Screen
             name="invoice/preview"

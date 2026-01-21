@@ -67,6 +67,7 @@ import { useReminderStore } from "@/store/useReminderStore";
 import { useOfflineStore } from "@/store/useOfflineStore";
 import { useSubscriptionStore } from "@/store/useSubscriptionStore";
 import { useTutorialStore } from "@/store/useTutorialStore";
+import { useOnboardingStore } from "@/store/useOnboardingStore";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/Button";
@@ -188,6 +189,7 @@ export default function Profile() {
   const { user, signOut } = useAuth();
   const { profile, updateProfile, fetchProfile } = useProfileStore();
   const { resetTutorial } = useTutorialStore();
+  const { resetOnboarding } = useOnboardingStore();
   const {
     settings: reminderSettings,
     fetchSettings: fetchReminderSettings,
@@ -386,6 +388,24 @@ export default function Profile() {
       // Navigate to trigger tutorial (it will show on next render)
       router.replace("/(tabs)");
     }
+  };
+
+  const handleResetOnboarding = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Alert.alert(
+      "Reset Onboarding",
+      "This will show the calibration sequence and setup flow again. Continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reset",
+          onPress: () => {
+            resetOnboarding();
+            router.replace("/onboarding/calibration");
+          },
+        },
+      ]
+    );
   };
 
   const handleLogout = () => {
@@ -966,6 +986,14 @@ export default function Profile() {
               subtitle="Review the app walkthrough"
               rightElement={<ChevronRight size={20} color={colors.textTertiary} />}
               onPress={handleReplayTutorial}
+            />
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <SettingRow
+              icon={<Sparkles size={20} color={colors.systemPurple} />}
+              title="Reset Onboarding"
+              subtitle="Replay calibration & setup flow"
+              rightElement={<ChevronRight size={20} color={colors.textTertiary} />}
+              onPress={handleResetOnboarding}
             />
           </View>
         </Animated.View>

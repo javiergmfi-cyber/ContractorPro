@@ -33,9 +33,11 @@ import * as Haptics from "expo-haptics";
 import { VoiceButton } from "@/components/VoiceButton";
 import { RecordingOverlay } from "@/components/RecordingOverlay";
 import { AnimatedCurrency } from "@/components/AnimatedNumber";
+import ZeroState from "@/components/dashboard/ZeroState";
 import { useDashboardStore } from "@/store/useDashboardStore";
 import { useProfileStore } from "@/store/useProfileStore";
 import { useInvoiceStore } from "@/store/useInvoiceStore";
+import { useOnboardingStore } from "@/store/useOnboardingStore";
 import { useTheme } from "@/lib/theme";
 import { useSubscriptionStore } from "@/store/useSubscriptionStore";
 import { startRecording, stopRecording } from "@/services/audio";
@@ -75,6 +77,7 @@ export default function HomeScreen() {
   const { profile, fetchProfile, updateProfile } = useProfileStore();
   const { invoices, fetchInvoices, setPendingInvoice, createInvoice } = useInvoiceStore();
   const { isPro } = useSubscriptionStore();
+  const { setupTasks, isSetupComplete } = useOnboardingStore();
 
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
@@ -89,8 +92,9 @@ export default function HomeScreen() {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
 
-  // Check if first run
+  // Check if first run - show ZeroState when no invoices and setup incomplete
   const isFirstRun = invoices.length === 0;
+  const showZeroState = isFirstRun && !isSetupComplete();
 
   useEffect(() => {
     fetchDashboardStats();
@@ -247,6 +251,26 @@ export default function HomeScreen() {
   const outstanding = invoices
     .filter((inv) => inv.status === "sent" || inv.status === "overdue")
     .reduce((sum, inv) => sum + inv.total, 0);
+
+  // Show ZeroState (Blueprint Dashboard) for new users
+  if (showZeroState) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top"]}>
+        {/* Header */}
+        <View style={styles.zeroStateHeader}>
+          <Text style={[styles.headerSubtitle, { color: colors.textTertiary }]}>
+            Business Health
+          </Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>
+            Overview
+          </Text>
+        </View>
+
+        {/* Zero State - Ghost Dashboard + Activation Stack */}
+        <ZeroState />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top"]}>
@@ -610,6 +634,11 @@ const styles = StyleSheet.create({
   // Header
   header: {
     marginBottom: 24,
+  },
+  zeroStateHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    marginBottom: 8,
   },
   headerSubtitle: {
     fontSize: 13,
