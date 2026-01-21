@@ -11,6 +11,8 @@ import {
   Switch,
   Modal,
   TouchableOpacity,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -148,6 +150,7 @@ const ProfileInputField = ({
   inputStyle,
   containerStyle,
   placeholderTextColor,
+  showSaved,
 }: {
   label: string;
   value: string;
@@ -161,9 +164,18 @@ const ProfileInputField = ({
   inputStyle?: any;
   containerStyle?: any;
   placeholderTextColor?: string;
+  showSaved?: boolean;
 }) => (
   <View style={containerStyle}>
-    <Text style={labelStyle}>{label}</Text>
+    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+      <Text style={labelStyle}>{label}</Text>
+      {showSaved && (
+        <Animated.View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+          <Check size={12} color="#34C759" />
+          <Text style={{ fontSize: 12, color: "#34C759", fontWeight: "500" }}>Saved</Text>
+        </Animated.View>
+      )}
+    </View>
     <TextInput
       style={inputStyle}
       value={value}
@@ -220,6 +232,16 @@ export default function Profile() {
   const [businessName, setBusinessName] = useState("");
   const [fullName, setFullName] = useState("");
   const [taxRate, setTaxRate] = useState("");
+
+  // Saved indicator states
+  const [savedField, setSavedField] = useState<string | null>(null);
+
+  // Show saved indicator briefly
+  const showSavedIndicator = (fieldName: string) => {
+    setSavedField(fieldName);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setTimeout(() => setSavedField(null), 1500);
+  };
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
@@ -465,12 +487,16 @@ export default function Profile() {
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+    <>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
+        >
         <Animated.View
           style={[
             styles.header,
@@ -569,30 +595,50 @@ export default function Profile() {
             label="Business Name"
             value={businessName}
             onChangeText={setBusinessName}
-            onBlur={() => businessName !== profile?.business_name && updateProfile({ business_name: businessName })}
+            onBlur={() => {
+              if (businessName !== profile?.business_name) {
+                updateProfile({ business_name: businessName });
+                showSavedIndicator("businessName");
+              }
+            }}
             placeholder="Your Business Name"
             autoCapitalize="words"
             containerStyle={styles.inputContainer}
             labelStyle={styles.inputLabel}
             inputStyle={styles.input}
             placeholderTextColor={colors.textTertiary}
+            showSaved={savedField === "businessName"}
           />
 
           <ProfileInputField
             label="Owner Name"
             value={fullName}
             onChangeText={setFullName}
-            onBlur={() => fullName !== profile?.full_name && updateProfile({ full_name: fullName })}
+            onBlur={() => {
+              if (fullName !== profile?.full_name) {
+                updateProfile({ full_name: fullName });
+                showSavedIndicator("fullName");
+              }
+            }}
             placeholder="Your Full Name"
             autoCapitalize="words"
             containerStyle={styles.inputContainer}
             labelStyle={styles.inputLabel}
             inputStyle={styles.input}
             placeholderTextColor={colors.textTertiary}
+            showSaved={savedField === "fullName"}
           />
 
           <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Tax Rate</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <Text style={styles.inputLabel}>Tax Rate</Text>
+              {savedField === "taxRate" && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <Check size={12} color="#34C759" />
+                  <Text style={{ fontSize: 12, color: "#34C759", fontWeight: "500" }}>Saved</Text>
+                </View>
+              )}
+            </View>
             <View style={styles.inputWithSuffix}>
               <TextInput
                 style={[styles.input, styles.inputWithSuffixField]}
@@ -607,6 +653,7 @@ export default function Profile() {
                   const newRate = parseFloat(taxRate) || 0;
                   if (newRate !== profile?.tax_rate) {
                     updateProfile({ tax_rate: newRate });
+                    showSavedIndicator("taxRate");
                   }
                 }}
               />
@@ -1020,6 +1067,8 @@ export default function Profile() {
         {/* Bottom spacing */}
         <View style={{ height: spacing.xl }} />
       </ScrollView>
+      </SafeAreaView>
+    </TouchableWithoutFeedback>
 
       {/* Reminder Schedule Modal */}
       <Modal
@@ -1199,7 +1248,7 @@ export default function Profile() {
           </ScrollView>
         </SafeAreaView>
       </Modal>
-    </SafeAreaView>
+    </>
   );
 }
 

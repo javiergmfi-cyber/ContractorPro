@@ -26,8 +26,11 @@ import {
   Zap,
   Clock,
   AlertTriangle,
+  Users,
+  Edit3,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
+import * as Contacts from "expo-contacts";
 import { useClientStore } from "@/store/useClientStore";
 import { useInvoiceStore } from "@/store/useInvoiceStore";
 import { useTheme } from "@/lib/theme";
@@ -55,6 +58,7 @@ export default function ClientsScreen() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [showOptionsModal, setShowOptionsModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newClientName, setNewClientName] = useState("");
   const [newClientEmail, setNewClientEmail] = useState("");
@@ -64,13 +68,14 @@ export default function ClientsScreen() {
   // Animations
   const searchWidthAnim = useRef(new Animated.Value(1)).current;
   const fabGlowAnim = useRef(new Animated.Value(1)).current;
+  const emptyButtonGlowAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     fetchClients();
     fetchInvoices();
   }, []);
 
-  // FAB breathing animation
+  // FAB and empty button breathing animation
   useEffect(() => {
     const breathe = Animated.loop(
       Animated.sequence([
@@ -86,8 +91,26 @@ export default function ClientsScreen() {
         }),
       ])
     );
+    const emptyButtonBreathe = Animated.loop(
+      Animated.sequence([
+        Animated.timing(emptyButtonGlowAnim, {
+          toValue: 1.08,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(emptyButtonGlowAnim, {
+          toValue: 1,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+      ])
+    );
     breathe.start();
-    return () => breathe.stop();
+    emptyButtonBreathe.start();
+    return () => {
+      breathe.stop();
+      emptyButtonBreathe.stop();
+    };
   }, []);
 
   // Calculate outstanding balance, LTV, Trust Score, and last invoice date for each client
@@ -203,6 +226,40 @@ export default function ClientsScreen() {
       stiffness: 200,
       useNativeDriver: true,
     }).start();
+  };
+
+  const handleImportFromContacts = async () => {
+    setShowOptionsModal(false);
+
+    const { status } = await Contacts.requestPermissionsAsync();
+    if (status !== "granted") {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
+
+    const contact = await Contacts.presentContactPickerAsync();
+    if (contact) {
+      // Extract contact info
+      const name = contact.name || "";
+      const email = contact.emails?.[0]?.email || "";
+      const phone = contact.phoneNumbers?.[0]?.number || "";
+
+      // Populate the form
+      setNewClientName(name);
+      setNewClientEmail(email);
+      setNewClientPhone(phone);
+
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setShowAddModal(true);
+    }
+  };
+
+  const handleAddManually = () => {
+    setShowOptionsModal(false);
+    setNewClientName("");
+    setNewClientEmail("");
+    setNewClientPhone("");
+    setShowAddModal(true);
   };
 
   // Pastel color palette for avatars
@@ -393,16 +450,34 @@ export default function ClientsScreen() {
       <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
         Add your first client to start tracking
       </Text>
-      <Pressable
-        onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          setShowAddModal(true);
-        }}
-        style={[styles.emptyButton, { backgroundColor: colors.primary }]}
-      >
-        <Plus size={20} color="#FFFFFF" strokeWidth={2.5} />
-        <Text style={styles.emptyButtonText}>Add Client</Text>
-      </Pressable>
+      <View style={styles.emptyButtonContainer}>
+        {/* Glow layer */}
+        <Animated.View
+          style={[
+            styles.emptyButtonGlow,
+            {
+              backgroundColor: colors.primary,
+              transform: [{ scale: emptyButtonGlowAnim }],
+            },
+          ]}
+        />
+        <Pressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
+            setShowOptionsModal(true);
+          }}
+          style={({ pressed }) => [
+            styles.emptyButton,
+            { backgroundColor: colors.primary },
+            pressed && { transform: [{ scale: 0.95 }], opacity: 0.9 },
+          ]}
+        >
+          <View style={styles.emptyButtonContent}>
+            <Plus size={20} color="#FFFFFF" strokeWidth={2.5} />
+            <Text style={styles.emptyButtonText}>Add Client</Text>
+          </View>
+        </Pressable>
+      </View>
     </View>
   );
 
@@ -508,6 +583,81 @@ export default function ClientsScreen() {
     </Modal>
   );
 
+  // Options Modal - Choose between contacts or manual entry
+  const renderOptionsModal = () => (
+    <Modal
+      visible={showOptionsModal}
+      animationType="fade"
+      transparent={true}
+      onRequestClose={() => setShowOptionsModal(false)}
+    >
+      <Pressable
+        style={styles.optionsOverlay}
+        onPress={() => setShowOptionsModal(false)}
+      >
+        <View style={[styles.optionsContainer, { backgroundColor: colors.card }]}>
+          <Text style={[styles.optionsTitle, { color: colors.text }]}>
+            Add Client
+          </Text>
+
+          <Pressable
+            onPress={handleImportFromContacts}
+            style={({ pressed }) => [
+              styles.optionButton,
+              { backgroundColor: pressed ? colors.backgroundSecondary : "transparent" },
+            ]}
+          >
+            <View style={[styles.optionIconContainer, { backgroundColor: colors.primary + "15" }]}>
+              <Users size={22} color={colors.primary} strokeWidth={2} />
+            </View>
+            <View style={styles.optionTextContainer}>
+              <Text style={[styles.optionLabel, { color: colors.text }]}>
+                Import from Contacts
+              </Text>
+              <Text style={[styles.optionDescription, { color: colors.textTertiary }]}>
+                Select from your phone contacts
+              </Text>
+            </View>
+          </Pressable>
+
+          <View style={[styles.optionDivider, { backgroundColor: colors.border }]} />
+
+          <Pressable
+            onPress={handleAddManually}
+            style={({ pressed }) => [
+              styles.optionButton,
+              { backgroundColor: pressed ? colors.backgroundSecondary : "transparent" },
+            ]}
+          >
+            <View style={[styles.optionIconContainer, { backgroundColor: colors.systemOrange + "15" }]}>
+              <Edit3 size={22} color={colors.systemOrange} strokeWidth={2} />
+            </View>
+            <View style={styles.optionTextContainer}>
+              <Text style={[styles.optionLabel, { color: colors.text }]}>
+                Add Manually
+              </Text>
+              <Text style={[styles.optionDescription, { color: colors.textTertiary }]}>
+                Enter client details yourself
+              </Text>
+            </View>
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              Haptics.selectionAsync();
+              setShowOptionsModal(false);
+            }}
+            style={[styles.cancelButton, { backgroundColor: colors.backgroundSecondary }]}
+          >
+            <Text style={[styles.cancelButtonText, { color: colors.text }]}>
+              Cancel
+            </Text>
+          </Pressable>
+        </View>
+      </Pressable>
+    </Modal>
+  );
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top"]}>
       {/* Header */}
@@ -583,33 +733,36 @@ export default function ClientsScreen() {
         }
       />
 
-      {/* Floating Action Button - Siri Orb Style */}
-      <View style={styles.fabContainer}>
-        {/* Glow layer */}
-        <Animated.View
-          style={[
-            styles.fabGlow,
-            {
-              backgroundColor: colors.primary,
-              transform: [{ scale: fabGlowAnim }],
-            },
-          ]}
-        />
-        <Pressable
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
-            setShowAddModal(true);
-          }}
-          style={({ pressed }) => [
-            styles.fab,
-            { backgroundColor: colors.primary },
-            pressed && styles.fabPressed,
-          ]}
-        >
-          <Plus size={28} color="#FFFFFF" strokeWidth={2.5} />
-        </Pressable>
-      </View>
+      {/* Floating Action Button - Only show when there are clients */}
+      {clients.length > 0 && (
+        <View style={styles.fabContainer}>
+          {/* Glow layer */}
+          <Animated.View
+            style={[
+              styles.fabGlow,
+              {
+                backgroundColor: colors.primary,
+                transform: [{ scale: fabGlowAnim }],
+              },
+            ]}
+          />
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
+              setShowOptionsModal(true);
+            }}
+            style={({ pressed }) => [
+              styles.fab,
+              { backgroundColor: colors.primary },
+              pressed && styles.fabPressed,
+            ]}
+          >
+            <Plus size={28} color="#FFFFFF" strokeWidth={2.5} />
+          </Pressable>
+        </View>
+      )}
 
+      {renderOptionsModal()}
       {renderAddModal()}
     </SafeAreaView>
   );
@@ -811,13 +964,32 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 32,
   },
+  emptyButtonContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyButtonGlow: {
+    position: "absolute",
+    width: 200,
+    height: 56,
+    borderRadius: 100,
+    opacity: 0.3,
+  },
   emptyButton: {
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 100,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  emptyButtonContent: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 100,
+    justifyContent: "center",
+    gap: 10,
   },
   emptyButtonText: {
     color: "#FFFFFF",
@@ -838,8 +1010,8 @@ const styles = StyleSheet.create({
   // FAB
   fabContainer: {
     position: "absolute",
-    bottom: 100,
-    right: 20,
+    top: 93,
+    right: 36,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -909,5 +1081,69 @@ const styles = StyleSheet.create({
   modalButtonContainer: {
     padding: 24,
     marginTop: "auto",
+  },
+
+  // Options Modal
+  optionsOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+  },
+  optionsContainer: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 24,
+    paddingBottom: 40,
+    paddingHorizontal: 20,
+  },
+  optionsTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    letterSpacing: -0.4,
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  optionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    gap: 16,
+  },
+  optionIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  optionTextContainer: {
+    flex: 1,
+  },
+  optionLabel: {
+    fontSize: 17,
+    fontWeight: "600",
+    letterSpacing: -0.3,
+  },
+  optionDescription: {
+    fontSize: 14,
+    fontWeight: "400",
+    marginTop: 2,
+  },
+  optionDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: 12,
+    marginVertical: 4,
+  },
+  cancelButton: {
+    marginTop: 16,
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: "center",
+  },
+  cancelButtonText: {
+    fontSize: 17,
+    fontWeight: "600",
   },
 });
