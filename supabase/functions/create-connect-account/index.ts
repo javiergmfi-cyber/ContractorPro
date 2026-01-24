@@ -6,7 +6,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
-import Stripe from "https://esm.sh/stripe@14.5.0";
+import Stripe from "https://esm.sh/stripe@17.4.0?target=deno";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,8 +14,9 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, {
-  apiVersion: "2023-10-16",
+const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
+  apiVersion: "2024-12-18.acacia",
+  httpClient: Stripe.createFetchHttpClient(),
 });
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -98,9 +99,13 @@ serve(async (req) => {
     );
   } catch (error) {
     console.error("Error creating connect account:", error);
+    console.error("Error details:", JSON.stringify(error, null, 2));
 
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({
+        error: error.message || "Unknown error",
+        details: error.toString(),
+      }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 500,

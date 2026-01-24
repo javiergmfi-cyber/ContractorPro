@@ -15,6 +15,7 @@ import Animated, {
   withTiming,
   withDelay,
   withSpring,
+  withRepeat,
   Easing,
   FadeIn,
   FadeInUp,
@@ -74,37 +75,82 @@ const SetupTask = ({
 }: SetupTaskProps) => {
   const { colors, isDark } = useTheme();
 
+  // Vivid iOS green - matches the reference image
+  const VIVID_GREEN = "#4CD964";
+
   const cardBackgroundColor = isPrimary
-    ? "#00D632"
+    ? VIVID_GREEN
     : isDark
     ? "rgba(255, 255, 255, 0.08)"
     : "#F2F2F7";
 
   const cardBorderColor = isPrimary
-    ? "#00D632"
+    ? VIVID_GREEN
     : isDark
     ? "rgba(255, 255, 255, 0.1)"
     : "#E5E5EA";
 
+  // Pulsing animation for primary button
+  const pulseScale = useSharedValue(1);
+  const pulseOpacity = useSharedValue(1);
+
+  useEffect(() => {
+    if (isPrimary && !completed) {
+      // Gentle pulsing animation
+      pulseScale.value = withRepeat(
+        withTiming(1.02, {
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease),
+        }),
+        -1,
+        true
+      );
+      pulseOpacity.value = withRepeat(
+        withTiming(0.9, {
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease),
+        }),
+        -1,
+        true
+      );
+    }
+  }, [isPrimary, completed]);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    if (isPrimary && !completed) {
+      return {
+        transform: [{ scale: pulseScale.value }],
+        opacity: pulseOpacity.value,
+      };
+    }
+    return {};
+  });
+
   return (
-    <Pressable
-      onPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        onPress();
-      }}
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        padding: 16,
-        borderRadius: 16,
-        borderWidth: 1,
-        backgroundColor: cardBackgroundColor,
-        borderColor: cardBorderColor,
-        opacity: completed ? 0.5 : 1,
-        marginBottom: 10,
-      }}
-      disabled={completed}
-    >
+    <Animated.View style={animatedStyle}>
+      <Pressable
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          onPress();
+        }}
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          padding: 16,
+          borderRadius: 16,
+          borderWidth: 1,
+          backgroundColor: cardBackgroundColor,
+          borderColor: cardBorderColor,
+          opacity: completed ? 0.5 : 1,
+          marginBottom: 10,
+          shadowColor: isPrimary ? VIVID_GREEN : "transparent",
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: isPrimary ? 0.3 : 0,
+          shadowRadius: 12,
+          elevation: isPrimary ? 8 : 0,
+        }}
+        disabled={completed}
+      >
         {/* Icon */}
         <View
           style={[
@@ -173,7 +219,8 @@ const SetupTask = ({
             color={isPrimary ? "rgba(255, 255, 255, 0.8)" : colors.textTertiary}
           />
         )}
-    </Pressable>
+      </Pressable>
+    </Animated.View>
   );
 };
 

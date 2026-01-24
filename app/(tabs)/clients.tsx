@@ -456,7 +456,7 @@ export default function ClientsScreen() {
           style={[
             styles.emptyButtonGlow,
             {
-              backgroundColor: colors.primary,
+              backgroundColor: "#4CD964", // Vivid iOS green
               transform: [{ scale: emptyButtonGlowAnim }],
             },
           ]}
@@ -468,7 +468,10 @@ export default function ClientsScreen() {
           }}
           style={({ pressed }) => [
             styles.emptyButton,
-            { backgroundColor: colors.primary },
+            {
+              backgroundColor: "#4CD964", // Vivid iOS green
+              shadowColor: "#4CD964", // Green shadow
+            },
             pressed && { transform: [{ scale: 0.95 }], opacity: 0.9 },
           ]}
         >

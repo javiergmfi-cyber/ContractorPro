@@ -9,6 +9,7 @@ import {
   RefreshControl,
   Modal,
   FlatList,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -176,25 +177,51 @@ export default function HomeScreen() {
     }
   };
 
+  // Voice recording timeout reference
+  const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+
   const startVoiceRecording = async () => {
     setIsRecording(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    await startRecording();
+
+    try {
+      await startRecording();
+
+      // Safety timeout: auto-stop after 60 seconds
+      recordingTimeoutRef.current = setTimeout(() => {
+        console.log("Recording auto-stopped after 60 seconds");
+        stopVoiceRecording();
+      }, 60000);
+    } catch (error) {
+      console.error("Failed to start recording:", error);
+      setIsRecording(false);
+      setIsLongPress(false);
+      Alert.alert("Recording Error", "Failed to start voice recording. Please try again.");
+    }
   };
 
   const stopVoiceRecording = async () => {
+    // Clear timeout if it exists
+    if (recordingTimeoutRef.current) {
+      clearTimeout(recordingTimeoutRef.current);
+    }
+
+    if (!isRecording) return; // Prevent double-stop
+
     setIsRecording(false);
     setIsLongPress(false);
-    const audioUri = await stopRecording();
-    if (audioUri) {
-      try {
+
+    try {
+      const audioUri = await stopRecording();
+      if (audioUri) {
         const result = await processVoiceToInvoice(audioUri);
         setPendingInvoice(result.parsedInvoice);
         router.push("/invoice/preview");
-      } catch (error) {
-        console.error("Error processing voice:", error);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
+    } catch (error) {
+      console.error("Error processing voice:", error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Processing Error", "Failed to process voice recording. Please try again.");
     }
   };
 

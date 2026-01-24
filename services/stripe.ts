@@ -25,14 +25,28 @@ export async function getConnectOnboardingUrl(): Promise<{
       },
     });
 
-    if (error) throw error;
+    if (error) {
+      console.error("Edge Function error:", error);
+
+      // Provide helpful error message
+      if (error.message?.includes("non-2xx")) {
+        throw new Error(
+          "Stripe setup incomplete. Please ensure:\n" +
+          "1. Edge Function is deployed\n" +
+          "2. STRIPE_SECRET_KEY is set in Supabase secrets\n" +
+          "3. Supabase project is properly configured"
+        );
+      }
+
+      throw error;
+    }
 
     return data
       ? { url: data.url, accountId: data.account_id }
       : null;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error getting onboarding URL:", error);
-    throw error;
+    throw new Error(error.message || "Failed to connect to Stripe");
   }
 }
 
