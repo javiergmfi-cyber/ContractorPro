@@ -11,6 +11,7 @@ import {
   Platform,
   Switch,
   Keyboard,
+  ActionSheetIOS,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -34,8 +35,10 @@ import { BlackCardInvoice } from "@/components/BlackCardInvoice";
 import { DepositSelector } from "@/components/DepositSelector";
 import { useInvoiceStore } from "@/store/useInvoiceStore";
 import { useProfileStore } from "@/store/useProfileStore";
+import { useSubscriptionStore } from "@/store/useSubscriptionStore";
 import { formatCurrency, toDollars } from "@/types";
-import { DepositType } from "@/types/database";
+import { Invoice, DepositType } from "@/types/database";
+import { sendInvoice } from "@/services/invoice";
 import * as db from "@/services/database";
 
 /**
@@ -54,6 +57,7 @@ export default function InvoicePreview() {
   const { colors, typography, spacing, radius } = useTheme();
   const { pendingInvoice, clearPendingInvoice } = useInvoiceStore();
   const { profile } = useProfileStore();
+  const { isPro, canSendInvoice, setSendsThisMonth } = useSubscriptionStore();
 
   const [isEditing, setIsEditing] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
@@ -134,52 +138,156 @@ export default function InvoicePreview() {
   };
 
   const handleConfirm = async () => {
+    // Check send limit for free users
+    if (!canSendInvoice()) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      router.push("/paywall?trigger=send_limit");
+      return;
+    }
+
+    // Fee warning for non-Pro users (3.5% card processing fee)
+    if (!isPro && total > 0) {
+      const feeAmount = Math.round(total * 0.035);
+      const currency = profile?.default_currency || "USD";
+      const feeDisplay = formatCurrency(feeAmount, currency);
+      const totalDisplay = formatCurrency(total, currency);
+
+      Alert.alert(
+        "Processing Fee",
+        `A 3.5% processing fee (${feeDisplay}) applies to the ${totalDisplay} payment. Upgrade to Pro to eliminate fees and keep more of what you earn.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Upgrade & Save",
+            onPress: () => router.push("/paywall?trigger=fee_warning"),
+          },
+          {
+            text: "Send Anyway",
+            onPress: () => proceedWithCreation(),
+          },
+        ]
+      );
+      return;
+    }
+
+    await proceedWithCreation();
+  };
+
+  const proceedWithCreation = async () => {
     setIsSaving(true);
 
     try {
-      // Create invoice in database with deposit settings
-      const invoiceData = {
-        client_name: clientName,
-        subtotal,
-        tax_amount: taxAmount,
-        total,
-        currency: profile?.default_currency || "USD",
-        status: "draft" as const,
-        notes: pendingInvoice.notes,
-        // Deposit settings
-        deposit_enabled: depositEnabled,
-        deposit_type: depositType,
-        deposit_value: depositValue,
-        deposit_amount: depositAmount,
-        amount_paid: 0,
-      };
-
-      const newInvoice = await db.createInvoice(invoiceData);
-
-      if (newInvoice) {
-        // Create invoice items
-        for (const item of items) {
-          await db.createInvoiceItem({
-            invoice_id: newInvoice.id,
-            description: item.description,
-            quantity: item.quantity || 1,
-            unit_price: item.unitPrice || item.price * 100,
-            total: (item.unitPrice || item.price * 100) * (item.quantity || 1),
-            original_transcript_segment: item.originalTranscript,
-          });
-        }
-
-        clearPendingInvoice();
-        setIsSaving(false);
-
-        // Show cinematic success overlay
-        setShowSuccess(true);
-      }
+      await performInvoiceCreation();
     } catch (error) {
       console.error("Error creating invoice:", error);
       setIsSaving(false);
       Alert.alert("Error", "Failed to create invoice. Please try again.");
     }
+  };
+
+  const performInvoiceCreation = async () => {
+    // Create invoice in database as "sent" (no draft step)
+    const invoiceData = {
+      client_name: clientName,
+      subtotal,
+      tax_amount: taxAmount,
+      total,
+      currency: profile?.default_currency || "USD",
+      status: "sent" as const,
+      sent_at: new Date().toISOString(),
+      notes: pendingInvoice.notes,
+      // Deposit settings
+      deposit_enabled: depositEnabled,
+      deposit_type: depositType,
+      deposit_value: depositValue,
+      deposit_amount: depositAmount,
+      amount_paid: 0,
+    };
+
+    const newInvoice = await db.createInvoice(invoiceData);
+
+    if (newInvoice) {
+      // Create invoice items
+      for (const item of items) {
+        await db.createInvoiceItem({
+          invoice_id: newInvoice.id,
+          description: item.description,
+          quantity: item.quantity || 1,
+          unit_price: item.unitPrice || item.price * 100,
+          total: (item.unitPrice || item.price * 100) * (item.quantity || 1),
+          original_transcript_segment: item.originalTranscript,
+        });
+      }
+
+      clearPendingInvoice();
+      setIsSaving(false);
+
+      // Show share method picker to send the invoice
+      showShareActionSheet(newInvoice as Invoice);
+    }
+  };
+
+  const showShareActionSheet = (invoice: Invoice) => {
+    const actionTitle = "How would you like to send this invoice?";
+
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ["Cancel", "Send via SMS", "Send via WhatsApp", "Send via Email", "Share..."],
+          cancelButtonIndex: 0,
+          title: actionTitle,
+        },
+        async (buttonIndex) => {
+          if (buttonIndex === 0) {
+            // User cancelled share but invoice is already created as sent
+            setShowSuccess(true);
+            return;
+          }
+
+          const shareMethod = ["", "sms", "whatsapp", "email", "native"][buttonIndex] as any;
+          await performSendInvoice(invoice, shareMethod);
+        }
+      );
+    } else {
+      Alert.alert(
+        "Send Invoice",
+        actionTitle,
+        [
+          { text: "Cancel", onPress: () => setShowSuccess(true) },
+          { text: "SMS", onPress: () => performSendInvoice(invoice, "sms") },
+          { text: "WhatsApp", onPress: () => performSendInvoice(invoice, "whatsapp") },
+          { text: "Email", onPress: () => performSendInvoice(invoice, "email") },
+          { text: "Share...", onPress: () => performSendInvoice(invoice, "native") },
+        ]
+      );
+    }
+  };
+
+  const performSendInvoice = async (
+    invoice: Invoice,
+    shareMethod: "sms" | "whatsapp" | "email" | "native"
+  ) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    try {
+      const result = await sendInvoice(invoice, {
+        includePaymentLink: true,
+        shareMethod,
+        messageType: "initial",
+      });
+
+      if (result.success) {
+        // Refresh send count for free tier tracking
+        const count = await db.getSendsThisMonth();
+        setSendsThisMonth(count);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch (error) {
+      console.error("Error sending invoice:", error);
+    }
+
+    // Show success overlay regardless (invoice is already created)
+    setShowSuccess(true);
   };
 
   const handleSuccessDismiss = () => {
@@ -754,7 +862,7 @@ export default function InvoicePreview() {
         {/* Bottom Action */}
         <View style={[styles.bottomAction, { borderTopColor: colors.border }]}>
           <Button
-            title={isSaving ? "Creating..." : "Create Invoice"}
+            title={isSaving ? "Creating..." : "Create & Send Invoice"}
             onPress={handleConfirm}
             disabled={isSaving || !clientName.trim() || items.length === 0}
           />

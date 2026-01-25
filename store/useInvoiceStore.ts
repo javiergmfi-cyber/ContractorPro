@@ -29,6 +29,9 @@ interface InvoiceState {
   currentInvoice: { invoice: Invoice; items: InvoiceItem[] } | null;
   pendingInvoice: ParsedInvoice | null;
 
+  // Review prompt tracking
+  lastReviewPromptedInvoiceId: string | null;
+
   // Loading states
   isLoading: boolean;
   isCreating: boolean;
@@ -43,10 +46,14 @@ interface InvoiceState {
   updateInvoice: (id: string, updates: Partial<Invoice>) => Promise<void>;
   updateInvoiceStatus: (id: string, status: Invoice["status"]) => Promise<void>;
   deleteInvoice: (id: string) => Promise<void>;
+  addChangeOrder: (invoiceId: string, description: string, unitPrice: number) => Promise<void>;
 
   // Pending invoice (from AI parsing)
   setPendingInvoice: (invoice: ParsedInvoice | null) => void;
   clearPendingInvoice: () => void;
+
+  // Review prompt tracking
+  setLastReviewPromptedInvoiceId: (id: string) => void;
 
   // Reset
   reset: () => void;
@@ -56,6 +63,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
   invoices: [],
   currentInvoice: null,
   pendingInvoice: null,
+  lastReviewPromptedInvoiceId: null,
   isLoading: false,
   isCreating: false,
 
@@ -157,15 +165,69 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
     }
   },
 
+  addChangeOrder: async (invoiceId: string, description: string, unitPrice: number) => {
+    try {
+      // Create the change order line item
+      const newItem = await db.createInvoiceItem({
+        invoice_id: invoiceId,
+        description,
+        quantity: 1,
+        unit_price: unitPrice,
+        total: unitPrice,
+      });
+
+      // Fetch all items to recalculate totals
+      const allItems = await db.getInvoiceItems(invoiceId);
+      const newSubtotal = allItems.reduce((sum, item) => sum + item.total, 0);
+
+      // Get current invoice to find tax rate
+      const state = get();
+      const currentInvoice = state.invoices.find((inv) => inv.id === invoiceId);
+      const taxRate = currentInvoice?.tax_rate || 0;
+      const newTaxAmount = Math.round(newSubtotal * (taxRate / 100));
+      const newTotal = newSubtotal + newTaxAmount;
+
+      // Update invoice totals
+      const updated = await db.updateInvoice(invoiceId, {
+        subtotal: newSubtotal,
+        tax_amount: newTaxAmount,
+        total: newTotal,
+      });
+
+      if (updated) {
+        // Optimistically update local state
+        set((state) => ({
+          invoices: state.invoices.map((inv) =>
+            inv.id === invoiceId ? { ...inv, ...updated } : inv
+          ),
+          currentInvoice:
+            state.currentInvoice?.invoice.id === invoiceId
+              ? {
+                  ...state.currentInvoice,
+                  invoice: updated,
+                  items: allItems,
+                }
+              : state.currentInvoice,
+        }));
+      }
+    } catch (error) {
+      console.error("Error adding change order:", error);
+      throw error;
+    }
+  },
+
   setPendingInvoice: (invoice) => set({ pendingInvoice: invoice }),
 
   clearPendingInvoice: () => set({ pendingInvoice: null }),
+
+  setLastReviewPromptedInvoiceId: (id: string) => set({ lastReviewPromptedInvoiceId: id }),
 
   reset: () =>
     set({
       invoices: [],
       currentInvoice: null,
       pendingInvoice: null,
+      lastReviewPromptedInvoiceId: null,
       isLoading: false,
       isCreating: false,
     }),

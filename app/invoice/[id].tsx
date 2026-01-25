@@ -32,6 +32,7 @@ import {
   Crown,
   Star,
   Sparkles,
+  FilePlus,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
@@ -45,6 +46,7 @@ import { sendInvoice, generateInvoicePDF } from "@/services/invoice";
 import { getPaymentLink } from "@/services/stripe";
 import * as db from "@/services/database";
 import { ReviewPrompt } from "@/components/ReviewPrompt";
+import { ChangeOrderModal } from "@/components/ChangeOrderModal";
 
 /**
  * Invoice Detail Screen - Elastic Parallax
@@ -66,9 +68,9 @@ export default function InvoiceDetail() {
   const navigation = useNavigation();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors, typography, spacing, radius, shadows, isDark } = useTheme();
-  const { invoices, fetchInvoice, updateInvoice } = useInvoiceStore();
+  const { invoices, fetchInvoice, updateInvoice, addChangeOrder, lastReviewPromptedInvoiceId, setLastReviewPromptedInvoiceId } = useInvoiceStore();
   const { profile } = useProfileStore();
-  const { isPro, canUseBadCopAutopilot, canSendInvoice, getRemainingInvoiceSends, setSendsThisMonth } = useSubscriptionStore();
+  const { isPro, canUseBadCopAutopilot, getRemainingInvoiceSends, setSendsThisMonth } = useSubscriptionStore();
 
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [invoiceItems, setInvoiceItems] = useState<any[]>([]);
@@ -78,10 +80,15 @@ export default function InvoiceDetail() {
   const [autoChaseEnabled, setAutoChaseEnabled] = useState(false);
   const [autoNudgeEnabled, setAutoNudgeEnabled] = useState(false);
   const [showReviewPrompt, setShowReviewPrompt] = useState(false);
+  const [showChangeOrder, setShowChangeOrder] = useState(false);
 
   // Scroll animation
   const scrollY = useRef(new Animated.Value(0)).current;
   const hasTriggeredHaptic = useRef(false);
+
+  // PAID stamp animation
+  const paidStampAnim = useRef(new Animated.Value(0)).current;
+  const hasFiredPaidStamp = useRef(false);
 
   // Update navigation title based on scroll
   useEffect(() => {
@@ -177,6 +184,53 @@ export default function InvoiceDetail() {
     }
   };
 
+  // PAID stamp: trigger spring animation when status is paid
+  useEffect(() => {
+    if (invoice?.status === "paid" && !hasFiredPaidStamp.current) {
+      hasFiredPaidStamp.current = true;
+      Animated.spring(paidStampAnim, {
+        toValue: 1,
+        friction: 6,
+        tension: 80,
+        useNativeDriver: true,
+      }).start();
+      // Haptic slam after animation settles
+      setTimeout(() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      }, 450);
+    }
+  }, [invoice?.status]);
+
+  // Auto-trigger review prompt when invoice becomes paid
+  useEffect(() => {
+    if (
+      invoice?.status === "paid" &&
+      invoice.id &&
+      lastReviewPromptedInvoiceId !== invoice.id
+    ) {
+      const timer = setTimeout(() => {
+        setShowReviewPrompt(true);
+        setLastReviewPromptedInvoiceId(invoice.id);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [invoice?.status, invoice?.id]);
+
+  // Status-specific background color for the elastic header area
+  const getStatusBackground = () => {
+    if (!invoice) return colors.background;
+    switch (invoice.status) {
+      case "overdue":
+        return colors.statusOverdue + "08";
+      case "deposit_paid":
+        return colors.systemOrange + "08";
+      case "paid":
+        return colors.statusPaid + "06";
+      default:
+        return colors.background;
+    }
+  };
+
   if (isLoading) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -229,13 +283,8 @@ export default function InvoiceDetail() {
     // "initial" = first time sending (counts against send limit)
     const isBalanceCollection = invoice.status === "deposit_paid";
 
-    // Check send limit for free users (only for first-time sends, not resends or balance collection)
-    // Balance collection doesn't count because deposits are PRO-only anyway
-    if (invoice.status === "draft" && !canSendInvoice()) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      router.push("/paywall?trigger=send_limit");
-      return;
-    }
+    // Send limit check is handled at creation time in preview.tsx
+    // This function now only handles resend/balance collection
 
     const actionTitle = isBalanceCollection
       ? "How would you like to collect the balance?"
@@ -288,14 +337,7 @@ export default function InvoiceDetail() {
       });
 
       if (result.success) {
-        // Update invoice status to 'sent' if it was draft
-        if (invoice.status === "draft") {
-          await updateInvoice(invoice.id, { status: "sent", sent_at: new Date().toISOString() });
-          setInvoice({ ...invoice, status: "sent" });
-          // Refresh send count for free tier tracking (only initial sends count)
-          loadSendCount();
-        }
-
+        // Invoices arrive as "sent" — no draft→sent transition needed
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } else {
         Alert.alert("Error", result.error || "Failed to send invoice");
@@ -350,6 +392,8 @@ export default function InvoiceDetail() {
     }
   };
 
+  // TODO: After change order updates total, invalidate existing Stripe payment session
+  // Currently OK because the payment page reads live invoice total from DB
   const handleViewPaymentLink = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
@@ -436,6 +480,44 @@ export default function InvoiceDetail() {
     setInvoice({ ...invoice, auto_nudge_enabled: value });
   };
 
+  const handleChangeOrderSubmit = async (description: string, amount: number) => {
+    setShowChangeOrder(false);
+
+    try {
+      await addChangeOrder(invoice.id, description, amount);
+
+      // Reload invoice to get updated totals
+      const updatedInvoice = await db.getInvoice(invoice.id);
+      if (updatedInvoice) {
+        setInvoice(updatedInvoice);
+        // Reload items
+        const items = await db.getInvoiceItems(invoice.id);
+        setInvoiceItems(items || []);
+      }
+
+      // Auto-resend to notify client of updated invoice
+      await performSendInvoice("native", "initial");
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+      const newTotal = updatedInvoice?.total || invoice.total + amount;
+      // For deposit invoices, show balance info
+      const amountPaid = updatedInvoice?.amount_paid || invoice.amount_paid || 0;
+      const balance = newTotal - amountPaid;
+
+      Alert.alert(
+        "Change Order Added",
+        amountPaid > 0
+          ? `Invoice updated to ${formatCurrency(newTotal, invoice.currency)}. Balance due: ${formatCurrency(balance, invoice.currency)}.`
+          : `Invoice updated to ${formatCurrency(newTotal, invoice.currency)}. Client has been notified.`
+      );
+    } catch (error) {
+      console.error("Error adding change order:", error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", "Failed to add change order. Please try again.");
+    }
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
       year: "numeric",
@@ -504,6 +586,8 @@ export default function InvoiceDetail() {
           style={[
             styles.elasticHeader,
             {
+              backgroundColor: getStatusBackground(),
+              borderRadius: radius.lg,
               transform: [
                 { scale: elasticScale },
                 { translateY: headerTranslateY },
@@ -557,6 +641,33 @@ export default function InvoiceDetail() {
               {invoice.status.toUpperCase()}
             </Text>
           </Animated.View>
+
+          {/* PAID Stamp - Animated slam effect */}
+          {invoice.status === "paid" && (
+            <Animated.Text
+              style={[
+                styles.paidStamp,
+                {
+                  color: colors.statusPaid,
+                  opacity: paidStampAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, 0.8],
+                  }),
+                  transform: [
+                    {
+                      scale: paidStampAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [2, 1],
+                      }),
+                    },
+                    { rotate: "-15deg" },
+                  ],
+                },
+              ]}
+            >
+              PAID
+            </Animated.Text>
+          )}
 
           {/* Approved but deposit not paid indicator */}
           {invoice.approved_at && !invoice.deposit_paid_at && invoice.deposit_enabled && (
@@ -799,7 +910,6 @@ export default function InvoiceDetail() {
         {!isPro &&
           invoice.status !== "paid" &&
           invoice.status !== "void" &&
-          invoice.status !== "draft" &&
           (() => {
             const daysSinceSent = Math.floor(
               (new Date().getTime() - new Date(invoice.created_at).getTime()) / (1000 * 60 * 60 * 24)
@@ -846,14 +956,6 @@ export default function InvoiceDetail() {
 
       {/* Bottom Actions */}
       <View style={[styles.bottomActions, { borderTopColor: colors.border }]}>
-        {invoice.status === "draft" && (
-          <Button
-            title={isSending ? "Sending..." : "Send Invoice"}
-            onPress={handleSendInvoice}
-            disabled={isSending}
-          />
-        )}
-
         {/* Approved but deposit not paid - special CTA (PRO) */}
         {invoice.status === "sent" && invoice.approved_at && invoice.deposit_enabled && !invoice.deposit_paid_at && (
           <View style={styles.actionRow}>
@@ -962,6 +1064,29 @@ export default function InvoiceDetail() {
             </Text>
           </View>
         )}
+
+        {/* Change Order Button - visible for active invoices */}
+        {(invoice.status === "sent" || invoice.status === "overdue" || invoice.status === "deposit_paid") && (
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              setShowChangeOrder(true);
+            }}
+            style={({ pressed }) => [
+              styles.changeOrderButton,
+              {
+                backgroundColor: colors.backgroundSecondary,
+                borderColor: colors.border,
+                opacity: pressed ? 0.8 : 1,
+              },
+            ]}
+          >
+            <FilePlus size={18} color={colors.textSecondary} />
+            <Text style={[typography.footnote, { color: colors.textSecondary, fontWeight: "600", marginLeft: 8 }]}>
+              Add Change Order
+            </Text>
+          </Pressable>
+        )}
       </View>
 
       {/* Reputation Loop: Review Prompt */}
@@ -972,6 +1097,15 @@ export default function InvoiceDetail() {
         invoiceId={invoice.id}
         clientEmail={invoice.client_email}
         googlePlaceId={profile?.google_place_id}
+      />
+
+      {/* Change Order Modal */}
+      <ChangeOrderModal
+        visible={showChangeOrder}
+        onDismiss={() => setShowChangeOrder(false)}
+        onSubmit={handleChangeOrderSubmit}
+        currentTotal={invoice.total}
+        currency={invoice.currency}
       />
     </SafeAreaView>
   );
@@ -1016,6 +1150,15 @@ const styles = StyleSheet.create({
   elasticHeader: {
     alignItems: "center",
     marginBottom: 16,
+    paddingVertical: 8,
+  },
+  paidStamp: {
+    position: "absolute",
+    top: 20,
+    right: -10,
+    fontSize: 48,
+    fontWeight: "900",
+    letterSpacing: 4,
   },
   avatar: {
     width: 72,
@@ -1170,5 +1313,14 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 6,
     marginLeft: 8,
+  },
+  changeOrderButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 12,
   },
 });

@@ -2,7 +2,6 @@ import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
-  FlatList,
   StyleSheet,
   Pressable,
   RefreshControl,
@@ -11,6 +10,7 @@ import {
   Alert,
   Modal,
 } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import {
@@ -155,7 +155,7 @@ export default function InvoicesScreen() {
   const filteredInvoices = invoices.filter((inv) => {
     switch (activeFilter) {
       case "outstanding":
-        return inv.status === "draft" || inv.status === "sent" || inv.status === "overdue" || inv.status === "deposit_paid";
+        return inv.status === "sent" || inv.status === "overdue" || inv.status === "deposit_paid";
       case "paid":
         return inv.status === "paid";
       default:
@@ -163,10 +163,8 @@ export default function InvoicesScreen() {
     }
   });
 
-  // Sort: drafts first, then overdue, then by date
+  // Sort: overdue first, then by date
   const sortedInvoices = [...filteredInvoices].sort((a, b) => {
-    if (a.status === "draft" && b.status !== "draft") return -1;
-    if (b.status === "draft" && a.status !== "draft") return 1;
     if (a.status === "overdue" && b.status !== "overdue") return -1;
     if (b.status === "overdue" && a.status !== "overdue") return 1;
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
@@ -175,7 +173,7 @@ export default function InvoicesScreen() {
   // Counts
   const allCount = invoices.filter((i) => i.status !== "void").length;
   const outstandingCount = invoices.filter(
-    (i) => i.status === "draft" || i.status === "sent" || i.status === "overdue" || i.status === "deposit_paid"
+    (i) => i.status === "sent" || i.status === "overdue" || i.status === "deposit_paid"
   ).length;
   const paidCount = invoices.filter((i) => i.status === "paid").length;
 
@@ -183,7 +181,6 @@ export default function InvoicesScreen() {
   const estimates = invoices.filter((i) => i.status === "sent" && i.deposit_enabled && !i.deposit_paid_at);
   const activeInvoices = invoices.filter((i) => i.status === "deposit_paid" || (i.status === "sent" && !i.deposit_enabled));
   const overdueInvoices = invoices.filter((i) => i.status === "overdue");
-  const drafts = invoices.filter((i) => i.status === "draft");
 
   const outstandingAmount = invoices
     .filter((i) => i.status === "sent" || i.status === "overdue" || i.status === "deposit_paid")
@@ -252,7 +249,6 @@ export default function InvoicesScreen() {
   // ═══════════════════════════════════════════════════════════════════════════
   const EmptyState = () => {
     const isNewUser = allCount === 0;
-    const hasOnlyDrafts = drafts.length > 0 && estimates.length === 0 && activeInvoices.length === 0;
     const hasEstimatesWaiting = estimates.length > 0;
     const allPaidUp = allCount > 0 && outstandingCount === 0;
 
@@ -522,10 +518,11 @@ export default function InvoicesScreen() {
             <SkeletonCard count={4} />
           </View>
         ) : (
-          <FlatList
+          <FlashList
             data={sortedInvoices}
             keyExtractor={(item) => item.id}
             renderItem={renderInvoiceItem}
+            estimatedItemSize={140}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
             onScroll={Animated.event(

@@ -459,6 +459,50 @@ export async function deleteInvoiceItem(id: string): Promise<boolean> {
   return true;
 }
 
+/**
+ * Add a change order item to an invoice and recalculate totals.
+ * Creates the line item, recalculates subtotal/tax/total, and updates the invoice.
+ */
+export async function addChangeOrderItem(
+  invoiceId: string,
+  description: string,
+  unitPrice: number
+): Promise<{ item: InvoiceItem; invoice: Invoice } | null> {
+  // Create line item
+  const newItem = await createInvoiceItem({
+    invoice_id: invoiceId,
+    description,
+    quantity: 1,
+    unit_price: unitPrice,
+    total: unitPrice,
+  });
+
+  if (!newItem) return null;
+
+  // Recalculate totals from all items
+  const allItems = await getInvoiceItems(invoiceId);
+  const newSubtotal = allItems.reduce((sum, item) => sum + item.total, 0);
+
+  // Get current invoice for tax rate
+  const currentInvoice = await getInvoice(invoiceId);
+  if (!currentInvoice) return null;
+
+  const taxRate = currentInvoice.tax_rate || 0;
+  const newTaxAmount = Math.round(newSubtotal * (taxRate / 100));
+  const newTotal = newSubtotal + newTaxAmount;
+
+  // Update invoice totals
+  const updatedInvoice = await updateInvoice(invoiceId, {
+    subtotal: newSubtotal,
+    tax_amount: newTaxAmount,
+    total: newTotal,
+  });
+
+  if (!updatedInvoice) return null;
+
+  return { item: newItem, invoice: updatedInvoice };
+}
+
 // ============================================================================
 // VOICE NOTES
 // ============================================================================
