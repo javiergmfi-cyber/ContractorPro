@@ -17,6 +17,10 @@ export interface ParsedInvoice {
   confidence?: number;
   notes?: string;
   dueDate?: string; // ISO date string
+  // Deposit settings (from create screen)
+  deposit_enabled?: boolean;
+  deposit_type?: "percent" | "fixed" | null;
+  deposit_value?: number | null; // percent (1-100) or fixed cents
 }
 
 interface InvoiceState {

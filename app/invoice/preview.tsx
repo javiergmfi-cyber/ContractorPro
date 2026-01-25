@@ -65,11 +65,31 @@ export default function InvoicePreview() {
   const [clientName, setClientName] = useState(pendingInvoice?.clientName || "");
   const [items, setItems] = useState(pendingInvoice?.items || []);
 
-  // Deposit settings
-  const [depositEnabled, setDepositEnabled] = useState(false);
-  const [depositType, setDepositType] = useState<DepositType | null>(null);
-  const [depositValue, setDepositValue] = useState<number | null>(null);
-  const [depositAmount, setDepositAmount] = useState(0);
+  // Deposit settings - initialize from pending invoice if available
+  const [depositEnabled, setDepositEnabled] = useState(
+    pendingInvoice?.deposit_enabled ?? false
+  );
+  const [depositType, setDepositType] = useState<DepositType | null>(
+    pendingInvoice?.deposit_type ?? null
+  );
+  const [depositValue, setDepositValue] = useState<number | null>(
+    pendingInvoice?.deposit_value ?? null
+  );
+  // Calculate initial deposit amount
+  const initialDepositAmount = (() => {
+    if (!pendingInvoice?.deposit_enabled || !pendingInvoice?.deposit_type || !pendingInvoice?.deposit_value) {
+      return 0;
+    }
+    const itemsTotal = (pendingInvoice.items || []).reduce(
+      (sum, item) => sum + item.price * (item.quantity || 1),
+      0
+    );
+    if (pendingInvoice.deposit_type === "percent") {
+      return Math.round((itemsTotal * pendingInvoice.deposit_value) / 100);
+    }
+    return pendingInvoice.deposit_value;
+  })();
+  const [depositAmount, setDepositAmount] = useState(initialDepositAmount);
 
   if (!pendingInvoice) {
     return (

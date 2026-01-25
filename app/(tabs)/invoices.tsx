@@ -13,11 +13,10 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Plus, FileText, Mic, Sparkles, ChevronRight, Edit3 } from "lucide-react-native";
+import { Plus, FileText, Mic, Edit3, Send, DollarSign, ArrowRight } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useInvoiceStore } from "@/store/useInvoiceStore";
-import { useProfileStore } from "@/store/useProfileStore";
 import { useTheme } from "@/lib/theme";
 import { Invoice } from "@/types";
 import { InvoiceCard } from "@/components/InvoiceCard";
@@ -26,70 +25,29 @@ import { SkeletonCard } from "@/components/SkeletonCard";
 import { startRecording, stopRecording } from "@/services/audio";
 import { processVoiceToInvoice } from "@/services/ai";
 
-// Trade-specific line item templates for the "magic draft"
-const TRADE_TEMPLATES: Record<string, { description: string; amount: number }[]> = {
-  plumber: [
-    { description: "Service Call", amount: 15000 },
-    { description: "Labor (per hour)", amount: 8500 },
-  ],
-  electrician: [
-    { description: "Diagnostic Fee", amount: 7500 },
-    { description: "Labor (per hour)", amount: 9500 },
-  ],
-  painter: [
-    { description: "Room Painting", amount: 35000 },
-    { description: "Materials", amount: 5000 },
-  ],
-  handyman: [
-    { description: "Service Call", amount: 7500 },
-    { description: "Hourly Rate", amount: 6500 },
-  ],
-  hvac: [
-    { description: "System Inspection", amount: 12500 },
-    { description: "Labor (per hour)", amount: 9500 },
-  ],
-  tile_stone: [
-    { description: "Tile Installation (per sq ft)", amount: 1200 },
-    { description: "Materials & Grout", amount: 25000 },
-  ],
-  general: [
-    { description: "Project Consultation", amount: 25000 },
-    { description: "Labor (per hour)", amount: 7500 },
-  ],
-  carpenter: [
-    { description: "Custom Woodwork", amount: 45000 },
-    { description: "Materials", amount: 15000 },
-  ],
-  other: [
-    { description: "Service Fee", amount: 10000 },
-    { description: "Labor", amount: 7500 },
-  ],
-};
-
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const HEADER_MAX_HEIGHT = 120;
 const HEADER_MIN_HEIGHT = 60;
 const HEADER_SCROLL_DISTANCE = HEADER_MAX_HEIGHT - HEADER_MIN_HEIGHT;
 
-type FilterType = "all" | "unpaid" | "drafts";
+type FilterType = "all" | "outstanding" | "paid";
 
 /**
  * Invoices Screen - The Workbench
- * Per HYBRID_SPEC.md
+ * Per Living Document Model
  *
  * Features:
- * - Segmented Control: All | Unpaid | Drafts
+ * - Segmented Control: All | Outstanding | Paid
+ * - Living Document lifecycle: Draft → Estimate → Invoice → Receipt
  * - Wallet Pass style cards
- * - Collapsing Large Title
  */
 
 export default function InvoicesScreen() {
   const router = useRouter();
   const { colors, isDark, typography, radius } = useTheme();
   const { invoices, isLoading, fetchInvoices, updateInvoice, setPendingInvoice } = useInvoiceStore();
-  const { profile } = useProfileStore();
 
-  const [activeFilter, setActiveFilter] = useState<FilterType>("unpaid");
+  const [activeFilter, setActiveFilter] = useState<FilterType>("outstanding");
   const [refreshing, setRefreshing] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
@@ -192,13 +150,15 @@ export default function InvoicesScreen() {
     setRefreshing(false);
   }, [fetchInvoices]);
 
-  // Filter invoices per HYBRID_SPEC: All | Unpaid | Drafts
+  // Filter invoices per Living Document: All | Outstanding | Paid
+  // Outstanding = anything not fully paid (drafts, estimates, invoices with deposit)
+  // Paid = receipts (fully paid)
   const filteredInvoices = invoices.filter((inv) => {
     switch (activeFilter) {
-      case "unpaid":
-        return inv.status === "sent" || inv.status === "overdue";
-      case "drafts":
-        return inv.status === "draft";
+      case "outstanding":
+        return inv.status === "draft" || inv.status === "sent" || inv.status === "overdue" || inv.status === "deposit_paid";
+      case "paid":
+        return inv.status === "paid";
       default:
         return inv.status !== "void";
     }
@@ -206,20 +166,25 @@ export default function InvoicesScreen() {
 
   // Sort logic varies by filter
   const sortedInvoices = [...filteredInvoices].sort((a, b) => {
-    if (activeFilter === "unpaid") {
-      // For unpaid filter: sort by most overdue first, then by due date
+    if (activeFilter === "outstanding") {
+      // For outstanding filter: drafts first, then overdue, then by due date
       const now = new Date().getTime();
       const aDueDate = a.due_date ? new Date(a.due_date).getTime() : now;
       const bDueDate = b.due_date ? new Date(b.due_date).getTime() : now;
+
+      // Drafts first (need action)
+      if (a.status === "draft" && b.status !== "draft") return -1;
+      if (b.status === "draft" && a.status !== "draft") return 1;
+
+      // Then overdue (most urgent)
       const aOverdueDays = a.status === "overdue" ? (now - aDueDate) : 0;
       const bOverdueDays = b.status === "overdue" ? (now - bDueDate) : 0;
 
-      // Overdue invoices first, sorted by most overdue
       if (aOverdueDays > 0 && bOverdueDays > 0) {
         return bOverdueDays - aOverdueDays; // Most overdue first
       }
-      if (aOverdueDays > 0) return -1; // a is overdue, b is not
-      if (bOverdueDays > 0) return 1; // b is overdue, a is not
+      if (aOverdueDays > 0) return -1;
+      if (bOverdueDays > 0) return 1;
 
       // Non-overdue: sort by due date (closest first)
       if (a.due_date && b.due_date) {
@@ -234,12 +199,17 @@ export default function InvoicesScreen() {
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
 
-  // Counts for segmented control per HYBRID_SPEC
+  // Counts for segmented control per Living Document model
   const allCount = invoices.filter((i) => i.status !== "void").length;
-  const unpaidCount = invoices.filter(
-    (i) => i.status === "sent" || i.status === "overdue"
+  const outstandingCount = invoices.filter(
+    (i) => i.status === "draft" || i.status === "sent" || i.status === "overdue" || i.status === "deposit_paid"
   ).length;
-  const draftsCount = invoices.filter((i) => i.status === "draft").length;
+  const paidCount = invoices.filter((i) => i.status === "paid").length;
+
+  // Calculate total outstanding amount for stats
+  const outstandingAmount = invoices
+    .filter((i) => i.status === "sent" || i.status === "overdue" || i.status === "deposit_paid")
+    .reduce((sum, inv) => sum + (inv.total - (inv.amount_paid || 0)), 0);
 
   const handleInvoicePress = (invoice: Invoice) => {
     router.push(`/invoice/${invoice.id}`);
@@ -341,10 +311,6 @@ export default function InvoicesScreen() {
     />
   );
 
-  // Get trade template for magic draft
-  const tradeTemplate = TRADE_TEMPLATES[profile?.trade || "other"] || TRADE_TEMPLATES.other;
-  const draftTotal = tradeTemplate.reduce((sum, item) => sum + item.amount, 0);
-
   // Format currency helper
   const formatCurrency = (cents: number) => {
     return new Intl.NumberFormat("en-US", {
@@ -354,143 +320,88 @@ export default function InvoicesScreen() {
     }).format(cents / 100);
   };
 
-  // Handle magic draft tap - navigate to create with pre-filled items
-  const handleMagicDraftTap = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    // Set pending invoice with trade template
-    setPendingInvoice({
-      clientName: "",
-      items: tradeTemplate.map((item) => ({
-        description: item.description,
-        price: item.amount / 100,
-        quantity: 1,
-      })),
-      detectedLanguage: "en",
-    });
-    router.push("/invoice/preview");
-  };
-
-  // Empty State Component with Magic Draft
+  // Empty State Component - Living Document Journey
   const EmptyState = () => (
     <View style={styles.emptyState}>
+      {/* Journey Visualization */}
+      <View style={styles.journeyContainer}>
+        <View style={[styles.journeyStep, { backgroundColor: colors.primary + "15" }]}>
+          <FileText size={24} color={colors.primary} strokeWidth={1.5} />
+        </View>
+        <ArrowRight size={20} color={colors.textTertiary} style={{ marginHorizontal: 8 }} />
+        <View style={[styles.journeyStep, { backgroundColor: colors.systemBlue + "15" }]}>
+          <Send size={24} color={colors.systemBlue} strokeWidth={1.5} />
+        </View>
+        <ArrowRight size={20} color={colors.textTertiary} style={{ marginHorizontal: 8 }} />
+        <View style={[styles.journeyStep, { backgroundColor: colors.statusPaid + "15" }]}>
+          <DollarSign size={24} color={colors.statusPaid} strokeWidth={1.5} />
+        </View>
+      </View>
+
       {/* Title */}
       <Text style={[styles.emptyTitle, { color: colors.text }]}>
-        Let's Get You Paid
+        Create. Send. Get Paid.
       </Text>
       <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
-        Send your first invoice in 30 seconds
+        Your invoices live here. They transform from{'\n'}estimates to receipts as your clients pay.
       </Text>
 
-      {/* Magic Draft Card - Pre-filled invoice based on trade */}
+      {/* Create Invoice CTA */}
       <Pressable
-        onPress={handleMagicDraftTap}
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          setShowOptionsModal(true);
+        }}
         style={({ pressed }) => [
-          styles.magicDraftCard,
+          styles.createInvoiceCTA,
           {
-            backgroundColor: colors.card,
-            borderColor: colors.primary + "30",
+            backgroundColor: colors.primary,
             transform: [{ scale: pressed ? 0.98 : 1 }],
           },
         ]}
       >
-        {/* Sparkle badge */}
-        <View style={[styles.magicBadge, { backgroundColor: colors.primary + "15" }]}>
-          <Sparkles size={12} color={colors.primary} strokeWidth={2.5} />
-          <Text style={[styles.magicBadgeText, { color: colors.primary }]}>
-            Draft #1
-          </Text>
-        </View>
-
-        {/* Draft content */}
-        <View style={styles.magicDraftContent}>
-          <View style={styles.magicDraftHeader}>
-            <Text style={[styles.magicDraftLabel, { color: colors.textTertiary }]}>
-              Ready to customize
-            </Text>
-            <ChevronRight size={18} color={colors.textTertiary} />
-          </View>
-
-          {/* Line items preview */}
-          {tradeTemplate.map((item, index) => (
-            <View key={index} style={styles.magicDraftItem}>
-              <Text style={[styles.magicDraftItemDesc, { color: colors.text }]}>
-                {item.description}
-              </Text>
-              <Text style={[styles.magicDraftItemPrice, { color: colors.textSecondary }]}>
-                {formatCurrency(item.amount)}
-              </Text>
-            </View>
-          ))}
-
-          {/* Total */}
-          <View style={[styles.magicDraftTotal, { borderTopColor: colors.border }]}>
-            <Text style={[styles.magicDraftTotalLabel, { color: colors.text }]}>
-              Total
-            </Text>
-            <Text style={[styles.magicDraftTotalAmount, { color: colors.primary }]}>
-              {formatCurrency(draftTotal)}
-            </Text>
-          </View>
-        </View>
-
-        {/* CTA hint */}
-        <Text style={[styles.magicDraftHint, { color: colors.primary }]}>
-          Tap to customize and send
+        <Plus size={20} color="#FFFFFF" strokeWidth={2.5} />
+        <Text style={styles.createInvoiceCTAText}>
+          Create Invoice
         </Text>
       </Pressable>
 
-      {/* Divider */}
-      <View style={styles.emptyDividerContainer}>
-        <View style={[styles.emptyDividerLine, { backgroundColor: colors.border }]} />
-        <Text style={[styles.emptyDividerText, { color: colors.textTertiary }]}>or</Text>
-        <View style={[styles.emptyDividerLine, { backgroundColor: colors.border }]} />
+      {/* Voice hint */}
+      <View style={styles.voiceHintContainer}>
+        <Mic size={16} color={colors.textTertiary} />
+        <Text style={[styles.voiceHint, { color: colors.textTertiary }]}>
+          or tap{' '}
+          <Text style={{ color: colors.primary, fontWeight: "600" }}>+ </Text>
+          and speak it
+        </Text>
       </View>
 
-      {/* Alternative actions */}
-      <View style={styles.altActionsRow}>
-        {/* Speak to Create Button */}
-        <Pressable
-          onPressIn={handleStartVoiceRecording}
-          onPressOut={handleStopVoiceRecording}
-          style={({ pressed }) => [
-            styles.altActionButton,
-            {
-              backgroundColor: colors.backgroundSecondary,
-              borderColor: colors.border,
-            },
-            pressed && { backgroundColor: colors.backgroundTertiary },
-          ]}
-        >
-          <View style={[styles.altActionIcon, { backgroundColor: colors.primary + "15" }]}>
-            <Mic size={20} color={colors.primary} strokeWidth={2} />
+      {/* Living Document Explainer */}
+      <View style={[styles.explainerCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.explainerRow}>
+          <View style={[styles.explainerBadge, { backgroundColor: colors.textTertiary + "20" }]}>
+            <Text style={[styles.explainerBadgeText, { color: colors.textSecondary }]}>DRAFT</Text>
           </View>
-          <Text style={[styles.altActionText, { color: colors.text }]}>
-            Voice
-          </Text>
-        </Pressable>
-
-        {/* Manual Create Button */}
-        <Pressable
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            router.push("/invoice/create");
-          }}
-          style={({ pressed }) => [
-            styles.altActionButton,
-            {
-              backgroundColor: colors.backgroundSecondary,
-              borderColor: colors.border,
-            },
-            pressed && { backgroundColor: colors.backgroundTertiary },
-          ]}
-        >
-          <View style={[styles.altActionIcon, { backgroundColor: colors.systemBlue + "15" }]}>
-            <Plus size={20} color={colors.systemBlue} strokeWidth={2} />
+          <Text style={[styles.explainerText, { color: colors.textSecondary }]}>Not yet sent</Text>
+        </View>
+        <View style={styles.explainerRow}>
+          <View style={[styles.explainerBadge, { backgroundColor: colors.systemBlue + "20" }]}>
+            <Text style={[styles.explainerBadgeText, { color: colors.systemBlue }]}>ESTIMATE</Text>
           </View>
-          <Text style={[styles.altActionText, { color: colors.text }]}>
-            Manual
-          </Text>
-        </Pressable>
+          <Text style={[styles.explainerText, { color: colors.textSecondary }]}>Awaiting payment</Text>
+        </View>
+        <View style={styles.explainerRow}>
+          <View style={[styles.explainerBadge, { backgroundColor: colors.alert + "20" }]}>
+            <Text style={[styles.explainerBadgeText, { color: colors.alert }]}>INVOICE</Text>
+          </View>
+          <Text style={[styles.explainerText, { color: colors.textSecondary }]}>Deposit paid, balance due</Text>
+        </View>
+        <View style={styles.explainerRow}>
+          <View style={[styles.explainerBadge, { backgroundColor: colors.statusPaid + "20" }]}>
+            <Text style={[styles.explainerBadgeText, { color: colors.statusPaid }]}>RECEIPT</Text>
+          </View>
+          <Text style={[styles.explainerText, { color: colors.textSecondary }]}>Fully paid</Text>
+        </View>
       </View>
     </View>
   );
@@ -504,18 +415,24 @@ export default function InvoicesScreen() {
             Invoices
           </Text>
           <Text style={[styles.subtitle, { color: colors.textTertiary }]}>
-            {allCount} total • {unpaidCount} unpaid
+            {outstandingAmount > 0
+              ? `${formatCurrency(outstandingAmount)} outstanding`
+              : allCount > 0
+                ? `${allCount} invoice${allCount !== 1 ? 's' : ''}`
+                : 'Create your first invoice'
+            }
           </Text>
         </View>
 
         {/* ═══════════════════════════════════════════════════════════
-            SEGMENTED CONTROL
+            SEGMENTED CONTROL - Living Document Filters
         ═══════════════════════════════════════════════════════════ */}
         <View style={styles.segmentedControlContainer}>
           <View style={[styles.segmentedControl, { backgroundColor: colors.backgroundSecondary }]}>
-            {(["all", "unpaid", "drafts"] as FilterType[]).map((filter) => {
+            {(["all", "outstanding", "paid"] as FilterType[]).map((filter) => {
               const isActive = activeFilter === filter;
-              const count = filter === "all" ? allCount : filter === "unpaid" ? unpaidCount : draftsCount;
+              const count = filter === "all" ? allCount : filter === "outstanding" ? outstandingCount : paidCount;
+              const label = filter === "outstanding" ? "Outstanding" : filter.charAt(0).toUpperCase() + filter.slice(1);
 
               return (
                 <Pressable
@@ -532,7 +449,7 @@ export default function InvoicesScreen() {
                       { color: isActive ? colors.text : colors.textTertiary },
                     ]}
                   >
-                    {filter.charAt(0).toUpperCase() + filter.slice(1)}
+                    {label}
                     {count > 0 && (
                       <Text style={{ color: colors.textTertiary }}> {count}</Text>
                     )}
@@ -611,7 +528,7 @@ export default function InvoicesScreen() {
         </Animated.View>
 
         {/* Recording Overlay */}
-        <RecordingOverlay visible={isRecording} duration={recordingDuration} />
+        <RecordingOverlay visible={isRecording} duration={recordingDuration} onStop={handleStopVoiceRecording} />
 
         {/* Options Modal - Voice or Manual */}
         <Modal
@@ -784,144 +701,135 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
   },
 
-  // Empty State with Magic Draft
+  // Empty State - Living Document Journey
   emptyState: {
     flex: 1,
     alignItems: "center",
-    paddingVertical: 40,
+    paddingVertical: 48,
     paddingHorizontal: 24,
   },
+  journeyContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 32,
+  },
+  journeyStep: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   emptyTitle: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: "800",
     letterSpacing: -0.5,
-    marginBottom: 8,
+    marginBottom: 12,
     textAlign: "center",
   },
   emptySubtitle: {
     fontSize: 15,
     fontWeight: "500",
     textAlign: "center",
-    marginBottom: 24,
+    marginBottom: 32,
+    lineHeight: 22,
   },
-  // Magic Draft Card
-  magicDraftCard: {
-    width: "100%",
-    borderRadius: 20,
-    borderWidth: 2,
-    padding: 20,
-    marginBottom: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 5,
-  },
-  magicBadge: {
+  createInvoiceCTA: {
     flexDirection: "row",
     alignItems: "center",
-    alignSelf: "flex-start",
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 100,
-    marginBottom: 16,
+    justifyContent: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 14,
+    gap: 8,
+    shadowColor: "#22C55E",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
-  magicBadgeText: {
-    fontSize: 12,
+  createInvoiceCTAText: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "600",
+  },
+  voiceHintContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 16,
+    gap: 6,
+  },
+  voiceHint: {
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  explainerCard: {
+    width: "100%",
+    marginTop: 40,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 12,
+  },
+  explainerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  explainerBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    minWidth: 80,
+    alignItems: "center",
+  },
+  explainerBadgeText: {
+    fontSize: 11,
     fontWeight: "700",
     letterSpacing: 0.5,
   },
-  magicDraftContent: {
-    marginBottom: 16,
-  },
-  magicDraftHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  magicDraftLabel: {
-    fontSize: 13,
-    fontWeight: "500",
-  },
-  magicDraftItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 8,
-  },
-  magicDraftItemDesc: {
-    fontSize: 15,
-    fontWeight: "500",
-  },
-  magicDraftItemPrice: {
-    fontSize: 15,
-    fontWeight: "600",
-    fontVariant: ["tabular-nums"],
-  },
-  magicDraftTotal: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingTop: 12,
-    marginTop: 8,
-    borderTopWidth: 1,
-  },
-  magicDraftTotalLabel: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  magicDraftTotalAmount: {
-    fontSize: 20,
-    fontWeight: "800",
-    fontVariant: ["tabular-nums"],
-  },
-  magicDraftHint: {
-    fontSize: 14,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  // Divider
-  emptyDividerContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 20,
-    width: "100%",
-  },
-  emptyDividerLine: {
-    flex: 1,
-    height: 1,
-  },
-  emptyDividerText: {
-    paddingHorizontal: 16,
+  explainerText: {
     fontSize: 14,
     fontWeight: "500",
-  },
-  // Alt Actions Row
-  altActionsRow: {
-    flexDirection: "row",
-    gap: 12,
-    width: "100%",
-  },
-  altActionButton: {
-    flex: 1,
-    alignItems: "center",
-    paddingVertical: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  altActionIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 8,
-  },
-  altActionText: {
-    fontSize: 14,
-    fontWeight: "600",
   },
 
+  // Options Modal - matches Clients tab
+  optionsOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    justifyContent: "flex-end",
+  },
+  optionsContainer: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingTop: 12,
+    paddingBottom: 40,
+    paddingHorizontal: 20,
+  },
+  handleBar: {
+    width: 36,
+    height: 5,
+    backgroundColor: "rgba(0, 0, 0, 0.15)",
+    borderRadius: 3,
+    alignSelf: "center",
+    marginBottom: 20,
+  },
+  optionsTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    letterSpacing: -0.4,
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  cancelButton: {
+    marginTop: 10,
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: "center",
+  },
+  cancelButtonText: {
+    fontSize: 17,
+    fontWeight: "600",
+  },
 });

@@ -202,28 +202,28 @@ export default function ClientDetailScreen() {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Client Name & Avatar */}
+        {/* Client Name & Avatar - Horizontal */}
         <View style={styles.profileSection}>
           <View style={[styles.avatar, { backgroundColor: colors.primary + "20" }]}>
             <Text style={[styles.avatarText, { color: colors.primary }]}>
               {client.name.substring(0, 2).toUpperCase()}
             </Text>
           </View>
-          <Text style={[typography.title2, { color: colors.text, marginTop: 12 }]}>
+          <Text style={[styles.clientName, { color: colors.text }]}>
             {client.name}
           </Text>
         </View>
 
         {/* Customer Stats */}
         <View style={[styles.section, { backgroundColor: colors.card, borderRadius: radius.lg }]}>
-          <Text style={[typography.footnote, { color: colors.textTertiary, marginBottom: 16 }]}>
+          <Text style={[typography.footnote, { color: colors.textTertiary, marginBottom: 10 }]}>
             CUSTOMER VALUE
           </Text>
 
           <View style={styles.statsGrid}>
             <View style={styles.statItem}>
               <View style={[styles.statIcon, { backgroundColor: colors.systemGreen + "15" }]}>
-                <DollarSign size={18} color={colors.systemGreen} />
+                <DollarSign size={16} color={colors.systemGreen} />
               </View>
               <Text style={[typography.caption1, { color: colors.textTertiary }]}>Lifetime</Text>
               <Text style={[typography.headline, { color: colors.text }]}>
@@ -233,7 +233,7 @@ export default function ClientDetailScreen() {
 
             <View style={styles.statItem}>
               <View style={[styles.statIcon, { backgroundColor: colors.systemBlue + "15" }]}>
-                <TrendingUp size={18} color={colors.systemBlue} />
+                <TrendingUp size={16} color={colors.systemBlue} />
               </View>
               <Text style={[typography.caption1, { color: colors.textTertiary }]}>Last 12 Mo</Text>
               <Text style={[typography.headline, { color: colors.text }]}>
@@ -243,7 +243,7 @@ export default function ClientDetailScreen() {
 
             <View style={styles.statItem}>
               <View style={[styles.statIcon, { backgroundColor: outstandingBalance > 0 ? colors.systemOrange + "15" : colors.textTertiary + "15" }]}>
-                <Clock size={18} color={outstandingBalance > 0 ? colors.systemOrange : colors.textTertiary} />
+                <Clock size={16} color={outstandingBalance > 0 ? colors.systemOrange : colors.textTertiary} />
               </View>
               <Text style={[typography.caption1, { color: colors.textTertiary }]}>Outstanding</Text>
               <Text style={[typography.headline, { color: outstandingBalance > 0 ? colors.systemOrange : colors.text }]}>
@@ -267,7 +267,7 @@ export default function ClientDetailScreen() {
 
         {/* Contact Info */}
         <View style={[styles.section, { backgroundColor: colors.card, borderRadius: radius.lg }]}>
-          <Text style={[typography.footnote, { color: colors.textTertiary, marginBottom: 12 }]}>
+          <Text style={[typography.footnote, { color: colors.textTertiary, marginBottom: 8 }]}>
             CONTACT INFO
           </Text>
 
@@ -295,59 +295,63 @@ export default function ClientDetailScreen() {
             </Text>
           )}
 
-          {/* Action Buttons */}
-          {(client.phone || client.email) && (
-            <View style={styles.contactActions}>
-              {client.phone && (
-                <Pressable
-                  onPress={handleCall}
-                  style={({ pressed }) => [
-                    styles.contactButton,
-                    { backgroundColor: colors.systemGreen + "15" },
-                    pressed && { opacity: 0.7 },
-                  ]}
-                >
-                  <Phone size={18} color={colors.systemGreen} />
-                  <Text style={[typography.subhead, { color: colors.systemGreen, fontWeight: "600" }]}>
-                    Call
-                  </Text>
-                </Pressable>
-              )}
-
-              {client.phone && (
-                <Pressable
-                  onPress={handleText}
-                  style={({ pressed }) => [
-                    styles.contactButton,
-                    { backgroundColor: colors.systemPurple + "15" },
-                    pressed && { opacity: 0.7 },
-                  ]}
-                >
-                  <MessageSquare size={18} color={colors.systemPurple} />
-                  <Text style={[typography.subhead, { color: colors.systemPurple, fontWeight: "600" }]}>
-                    Text
-                  </Text>
-                </Pressable>
-              )}
-
-              {client.email && (
-                <Pressable
-                  onPress={handleEmail}
-                  style={({ pressed }) => [
-                    styles.contactButton,
-                    { backgroundColor: colors.systemBlue + "15" },
-                    pressed && { opacity: 0.7 },
-                  ]}
-                >
-                  <Mail size={18} color={colors.systemBlue} />
-                  <Text style={[typography.subhead, { color: colors.systemBlue, fontWeight: "600" }]}>
-                    Email
-                  </Text>
-                </Pressable>
-              )}
-            </View>
-          )}
         </View>
+
+        {/* Contact Action Buttons - iOS Style */}
+        {(client.phone || client.email) && (
+          <View style={styles.contactActions}>
+            {client.phone && (
+              <Pressable
+                onPress={handleCall}
+                style={({ pressed }) => [
+                  styles.contactButton,
+                  pressed && { transform: [{ scale: 0.95 }], opacity: 0.8 },
+                ]}
+              >
+                <View style={[styles.contactIconCircle, { backgroundColor: colors.systemGreen }]}>
+                  <Phone size={20} color="#FFFFFF" strokeWidth={2} />
+                </View>
+                <Text style={[styles.contactButtonLabel, { color: colors.text }]}>
+                  Call
+                </Text>
+              </Pressable>
+            )}
+
+            {client.phone && (
+              <Pressable
+                onPress={handleText}
+                style={({ pressed }) => [
+                  styles.contactButton,
+                  pressed && { transform: [{ scale: 0.95 }], opacity: 0.8 },
+                ]}
+              >
+                <View style={[styles.contactIconCircle, { backgroundColor: colors.systemBlue }]}>
+                  <MessageSquare size={20} color="#FFFFFF" strokeWidth={2} />
+                </View>
+                <Text style={[styles.contactButtonLabel, { color: colors.text }]}>
+                  Message
+                </Text>
+              </Pressable>
+            )}
+
+            {client.email && (
+              <Pressable
+                onPress={handleEmail}
+                style={({ pressed }) => [
+                  styles.contactButton,
+                  pressed && { transform: [{ scale: 0.95 }], opacity: 0.8 },
+                ]}
+              >
+                <View style={[styles.contactIconCircle, { backgroundColor: colors.systemOrange }]}>
+                  <Mail size={20} color="#FFFFFF" strokeWidth={2} />
+                </View>
+                <Text style={[styles.contactButtonLabel, { color: colors.text }]}>
+                  Email
+                </Text>
+              </Pressable>
+            )}
+          </View>
+        )}
 
         {/* Unpaid Invoices with Auto-Chase Upsell */}
         {unpaidInvoices.length > 0 && (
@@ -436,7 +440,7 @@ export default function ClientDetailScreen() {
 
         {/* All Invoices Summary */}
         <View style={[styles.section, { backgroundColor: colors.card, borderRadius: radius.lg }]}>
-          <Text style={[typography.footnote, { color: colors.textTertiary, marginBottom: 12 }]}>
+          <Text style={[typography.footnote, { color: colors.textTertiary, marginBottom: 8 }]}>
             INVOICE HISTORY
           </Text>
 
@@ -468,7 +472,7 @@ export default function ClientDetailScreen() {
         </View>
 
         {/* Delete Button */}
-        <View style={{ marginTop: 20, marginHorizontal: -4 }}>
+        <View style={{ marginTop: 12, marginHorizontal: -4 }}>
           <TouchableOpacity
             onPress={handleDelete}
             disabled={isDeleting}
@@ -487,7 +491,7 @@ export default function ClientDetailScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={{ height: 40 }} />
+        <View style={{ height: 20 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -520,23 +524,31 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   profileSection: {
+    flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 24,
+    paddingVertical: 16,
+    gap: 14,
   },
   avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     alignItems: "center",
     justifyContent: "center",
   },
   avatarText: {
-    fontSize: 28,
+    fontSize: 20,
     fontWeight: "700",
   },
+  clientName: {
+    fontSize: 24,
+    fontWeight: "700",
+    letterSpacing: -0.5,
+    flex: 1,
+  },
   section: {
-    padding: 16,
-    marginBottom: 16,
+    padding: 14,
+    marginBottom: 12,
   },
   statsGrid: {
     flexDirection: "row",
@@ -547,38 +559,57 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   statIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 8,
+    marginBottom: 6,
   },
   paymentBehavior: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: 12,
-    marginTop: 16,
+    padding: 10,
+    marginTop: 12,
   },
   infoRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 8,
+    paddingVertical: 6,
   },
   contactActions: {
     flexDirection: "row",
-    gap: 10,
-    marginTop: 16,
+    justifyContent: "center",
+    gap: 40,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 4,
   },
   contactButton: {
-    flex: 1,
-    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 10,
+    width: 80,
+  },
+  contactIconCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  contactButtonLabel: {
+    fontSize: 13,
+    fontWeight: "500",
+    letterSpacing: -0.1,
+    textAlign: "center",
+    width: "100%",
   },
   invoiceRow: {
     flexDirection: "row",
@@ -634,10 +665,10 @@ const styles = StyleSheet.create({
   },
   summaryItem: {
     alignItems: "center",
-    paddingVertical: 8,
+    paddingVertical: 4,
   },
   summaryDivider: {
     width: 1,
-    height: 32,
+    height: 28,
   },
 });

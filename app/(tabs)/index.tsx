@@ -308,12 +308,12 @@ export default function HomeScreen() {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top"]}>
         {/* Header */}
-        <View style={styles.zeroStateHeader}>
-          <Text style={[styles.headerSubtitle, { color: colors.textTertiary }]}>
-            Business Health
+        <View style={styles.header}>
+          <Text style={[styles.largeTitle, { color: colors.text }]}>
+            Home
           </Text>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>
-            Overview
+          <Text style={[styles.subtitle, { color: colors.textTertiary }]}>
+            Business health overview
           </Text>
         </View>
 
@@ -334,14 +334,14 @@ export default function HomeScreen() {
         }
       >
         {/* ═══════════════════════════════════════════════════════════
-            HEADER - "Business Health"
+            HEADER - matches other tabs
         ═══════════════════════════════════════════════════════════ */}
-        <Animated.View style={[styles.header, { opacity: fadeAnim }]}>
-          <Text style={[styles.headerSubtitle, { color: colors.textTertiary }]}>
-            Business Health
+        <Animated.View style={[styles.headerAnimated, { opacity: fadeAnim }]}>
+          <Text style={[styles.largeTitle, { color: colors.text }]}>
+            Home
           </Text>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>
-            Overview
+          <Text style={[styles.subtitle, { color: colors.textTertiary }]}>
+            Business health overview
           </Text>
         </Animated.View>
 
@@ -589,7 +589,7 @@ export default function HomeScreen() {
         </Text>
       </View>
 
-      <RecordingOverlay visible={isRecording} duration={recordingDuration} />
+      <RecordingOverlay visible={isRecording} duration={recordingDuration} onStop={stopVoiceRecording} />
 
       {/* ═══════════════════════════════════════════════════════════
           TRADE SELECTION MODAL
@@ -682,26 +682,25 @@ const styles = StyleSheet.create({
     paddingTop: 16,
   },
 
-  // Header
+  // Header - matches other tabs exactly
   header: {
-    marginBottom: 24,
-  },
-  zeroStateHeader: {
     paddingHorizontal: 20,
     paddingTop: 16,
-    marginBottom: 8,
+    paddingBottom: 8,
   },
-  headerSubtitle: {
-    fontSize: 13,
-    fontWeight: "600",
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-    marginBottom: 4,
+  headerAnimated: {
+    marginBottom: 16,
   },
-  headerTitle: {
+  largeTitle: {
     fontSize: 34,
     fontWeight: "700",
     letterSpacing: -0.7,
+  },
+  subtitle: {
+    fontSize: 15,
+    fontWeight: "500",
+    marginTop: 4,
+    letterSpacing: -0.2,
   },
 
   // First Run

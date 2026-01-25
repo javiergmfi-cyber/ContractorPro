@@ -1,4 +1,4 @@
-import { View, Text, Modal, StyleSheet, Animated } from "react-native";
+import { View, Text, Modal, StyleSheet, Animated, Pressable } from "react-native";
 import { Mic } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import { useTheme, typography, spacing, radius } from "../lib/theme";
@@ -6,9 +6,10 @@ import { useTheme, typography, spacing, radius } from "../lib/theme";
 interface RecordingOverlayProps {
   visible: boolean;
   duration: number;
+  onStop?: () => void;
 }
 
-export function RecordingOverlay({ visible, duration }: RecordingOverlayProps) {
+export function RecordingOverlay({ visible, duration, onStop }: RecordingOverlayProps) {
   const { colors, isDark } = useTheme();
   const [dots, setDots] = useState("");
 
@@ -84,18 +85,20 @@ export function RecordingOverlay({ visible, duration }: RecordingOverlayProps) {
             },
           ]}
         >
-          <Animated.View
-            style={[
-              styles.iconContainer,
-              {
-                transform: [{ scale: pulseAnim }],
-              },
-            ]}
-          >
-            <View style={styles.iconInner}>
-              <Mic size={36} color="#FFFFFF" strokeWidth={2} />
-            </View>
-          </Animated.View>
+          <Pressable onPress={onStop}>
+            <Animated.View
+              style={[
+                styles.iconContainer,
+                {
+                  transform: [{ scale: pulseAnim }],
+                },
+              ]}
+            >
+              <View style={styles.iconInner}>
+                <Mic size={36} color="#FFFFFF" strokeWidth={2} />
+              </View>
+            </Animated.View>
+          </Pressable>
 
           <Text style={styles.duration}>{formatDuration(duration)}</Text>
           <Text style={styles.status}>Recording{dots}</Text>
@@ -106,7 +109,7 @@ export function RecordingOverlay({ visible, duration }: RecordingOverlayProps) {
             ))}
           </View>
 
-          <Text style={styles.hint}>Release to finish</Text>
+          <Text style={styles.hint}>Tap mic to finish</Text>
         </Animated.View>
       </Animated.View>
     </Modal>

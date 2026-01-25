@@ -56,6 +56,13 @@ export async function processVoiceToInvoice(
     );
 
     if (error) {
+      // Log detailed error info
+      console.error("Edge Function error details:", {
+        message: error.message,
+        context: error.context,
+        name: error.name,
+      });
+
       // Update voice note status to failed
       await db.updateVoiceNote(voiceNote.id, {
         processing_status: "failed",
@@ -99,9 +106,9 @@ export async function processVoiceToInvoice(
   } catch (error) {
     console.error("Error processing voice to invoice:", error);
 
-    // In development, fall back to mock data
+    // In development, fall back to mock data on error
     if (isDevelopment) {
-      console.warn("Using mock data in development mode");
+      console.warn("Falling back to mock data due to error:", error);
       return getMockParseResult();
     }
 

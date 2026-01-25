@@ -30,6 +30,7 @@ import {
   Edit3,
   Crown,
   Bell,
+  ChevronRight,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import * as Contacts from "expo-contacts";
@@ -41,6 +42,34 @@ import { Client } from "@/types/database";
 import { Button } from "@/components/ui/Button";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
+
+// Format phone number as (XXX) XXX-XXXX
+const formatPhoneNumber = (phone: string): string => {
+  const cleaned = phone.replace(/\D/g, "");
+  if (cleaned.length === 10) {
+    return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
+  }
+  if (cleaned.length === 11 && cleaned[0] === "1") {
+    return `(${cleaned.slice(1, 4)}) ${cleaned.slice(4, 7)}-${cleaned.slice(7)}`;
+  }
+  return phone;
+};
+
+// Format phone number as user types - (XXX) XXX-XXXX
+const formatPhoneAsYouType = (text: string): string => {
+  // Remove all non-digits
+  const digits = text.replace(/\D/g, "").slice(0, 10);
+
+  if (digits.length === 0) return "";
+  if (digits.length <= 3) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+};
+
+// Get raw digits from formatted phone
+const getPhoneDigits = (phone: string): string => {
+  return phone.replace(/\D/g, "");
+};
 
 /**
  * Clients Tab - Relationship Leaderboard
@@ -378,148 +407,112 @@ export default function ClientsScreen() {
     const TrustIcon = getTrustScoreIcon(item.avgPaymentDays);
     const trustColor = getTrustScoreColor(item.avgPaymentDays);
     const lastInvoiceFormatted = formatLastInvoiceDate(item.lastInvoiceDate);
+    const hasInvoiceHistory = item.totalSpent > 0 || item.outstandingBalance > 0;
 
     return (
       <Pressable
         onPress={() => handleClientPress(item)}
-        style={({ pressed }) => [
-          styles.clientCard,
-          {
-            backgroundColor: colors.card,
-            transform: [{ scale: pressed ? 0.98 : 1 }],
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: isDark ? 0.3 : 0.1,
-            shadowRadius: 12,
-          },
-        ]}
+        style={({ pressed }) => ({
+          padding: 16,
+          borderRadius: 16,
+          backgroundColor: colors.card,
+          borderWidth: 1,
+          borderColor: colors.border,
+          transform: [{ scale: pressed ? 0.98 : 1 }],
+        })}
       >
-        {/* Trophy badge for top client */}
-        {isTopClient && (
-          <View style={[styles.topBadge, { backgroundColor: colors.systemOrange }]}>
-            <Trophy size={10} color="#FFFFFF" />
-          </View>
-        )}
-
-        {/* Monogram Avatar */}
-        <View style={[styles.avatar, { backgroundColor: getPastelColor(item.name) }]}>
-          <Text style={styles.avatarText}>{getInitials(item.name)}</Text>
-        </View>
-
-        {/* Client Info */}
-        <View style={styles.clientInfo}>
-          <Text
-            style={[styles.clientName, { color: colors.text }]}
-            numberOfLines={1}
-          >
-            {item.name}
-          </Text>
-
-          {/* Secondary info line: LTV + Last Invoice Date */}
-          <View style={styles.secondaryInfoRow}>
-            {item.totalSpent > 0 && (
-              <Text style={[styles.secondaryInfoText, { color: colors.textTertiary }]}>
-                LTV: {formatCurrency(item.totalSpent)}
-              </Text>
-            )}
-            {item.totalSpent > 0 && lastInvoiceFormatted && (
-              <Text style={[styles.secondaryInfoText, { color: colors.textTertiary }]}> • </Text>
-            )}
-            {lastInvoiceFormatted && (
-              <Text style={[styles.secondaryInfoText, { color: colors.textTertiary }]}>
-                Last: {lastInvoiceFormatted}
-              </Text>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          {/* Left: Avatar */}
+          <View style={{
+            width: 48,
+            height: 48,
+            borderRadius: 24,
+            alignItems: "center",
+            justifyContent: "center",
+            marginRight: 12,
+            backgroundColor: getPastelColor(item.name),
+          }}>
+            <Text style={styles.avatarText}>{getInitials(item.name)}</Text>
+            {/* Trophy badge for top client */}
+            {isTopClient && (
+              <View style={[styles.topBadge, { backgroundColor: colors.systemOrange }]}>
+                <Trophy size={10} color="#FFFFFF" />
+              </View>
             )}
           </View>
 
-          {/* Trust Score Badge (if has payment history) */}
-          {item.avgPaymentDays !== null && TrustIcon && (
-            <View style={styles.trustScoreRow}>
-              <View
-                style={[
-                  styles.trustScoreBadge,
-                  { backgroundColor: trustColor + "18" },
+          {/* Middle: Client Info */}
+          <View style={{ flex: 1, marginRight: 12 }}>
+            <Text
+              style={[styles.clientName, { color: colors.text }]}
+              numberOfLines={1}
+            >
+              {item.name}
+            </Text>
+
+            {/* Subtitle line based on context */}
+            {item.outstandingBalance > 0 ? (
+              <Text style={[styles.clientSubtitle, { color: colors.systemRed }]}>
+                {formatCurrency(item.outstandingBalance)} owed
+              </Text>
+            ) : hasInvoiceHistory ? (
+              <Text style={[styles.clientSubtitle, { color: colors.textTertiary }]}>
+                {formatCurrency(item.totalSpent)} lifetime
+                {lastInvoiceFormatted ? ` • ${lastInvoiceFormatted}` : ""}
+              </Text>
+            ) : item.phone ? (
+              <Text style={[styles.clientSubtitle, { color: colors.textTertiary }]}>
+                {formatPhoneNumber(item.phone)}
+              </Text>
+            ) : item.email ? (
+              <Text style={[styles.clientSubtitle, { color: colors.textTertiary }]} numberOfLines={1}>
+                {item.email}
+              </Text>
+            ) : (
+              <Text style={[styles.clientSubtitle, { color: colors.textTertiary }]}>
+                No contact info
+              </Text>
+            )}
+          </View>
+
+          {/* Right: Action area */}
+          <View style={{ alignItems: "center", justifyContent: "center" }}>
+            {item.outstandingBalance > 0 ? (
+              <Pressable
+                onPress={(e) => {
+                  e.stopPropagation();
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  router.push("/paywall?trigger=auto_chase");
+                }}
+                style={({ pressed }) => [
+                  styles.chaseButton,
+                  { backgroundColor: colors.primary },
+                  pressed && { opacity: 0.8 },
                 ]}
               >
-                <TrustIcon size={10} color={trustColor} strokeWidth={2.5} />
-                <Text style={[styles.trustScoreText, { color: trustColor }]}>
-                  {item.avgPaymentDays === 0 ? "Same day" : `${item.avgPaymentDays}d avg`}
-                </Text>
-              </View>
-            </View>
-          )}
-
-          {/* Contact info (shown only if no invoices yet) */}
-          {item.totalSpent === 0 && item.outstandingBalance === 0 && (item.email || item.phone) && (
-            <View style={styles.contactRow}>
-              {item.phone && (
-                <View style={styles.contactItem}>
-                  <Phone size={11} color={colors.textTertiary} />
-                  <Text style={[styles.contactText, { color: colors.textTertiary }]}>
-                    {item.phone}
-                  </Text>
-                </View>
-              )}
-              {item.email && !item.phone && (
-                <View style={styles.contactItem}>
-                  <Mail size={11} color={colors.textTertiary} />
-                  <Text
-                    style={[styles.contactText, { color: colors.textTertiary }]}
-                    numberOfLines={1}
-                  >
-                    {item.email}
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
+                <Bell size={14} color="#FFFFFF" />
+                <Text style={styles.chaseButtonText}>Chase</Text>
+                {!isPro && (
+                  <View style={[styles.proBadgeSmall, { backgroundColor: colors.systemOrange }]}>
+                    <Crown size={8} color="#FFF" />
+                  </View>
+                )}
+              </Pressable>
+            ) : (
+              <ChevronRight size={20} color={colors.textTertiary} />
+            )}
+          </View>
         </View>
-
-        {/* Outstanding Balance with Auto-Chase button */}
-        {item.outstandingBalance > 0 ? (
-          <View style={styles.balanceContainer}>
-            <Text style={[styles.balanceAmount, { color: colors.systemRed }]}>
-              {formatCurrency(item.outstandingBalance)}
-            </Text>
-            {/* Auto-Chase Button */}
-            <Pressable
-              onPress={(e) => {
-                e.stopPropagation();
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                if (!isPro) {
-                  router.push("/paywall?trigger=auto_chase");
-                } else {
-                  // TODO: Trigger auto-chase for this client
-                  router.push("/paywall?trigger=auto_chase");
-                }
-              }}
-              style={({ pressed }) => [
-                styles.autoChaseButton,
-                { backgroundColor: colors.primary + "15" },
-                pressed && { opacity: 0.7 },
-              ]}
-            >
-              <Bell size={12} color={colors.primary} />
-              <Text style={[styles.autoChaseText, { color: colors.primary }]}>
-                Chase
-              </Text>
-              {!isPro && (
-                <View style={[styles.proBadgeSmall, { backgroundColor: colors.systemOrange }]}>
-                  <Crown size={8} color="#FFF" />
-                </View>
-              )}
-            </Pressable>
-          </View>
-        ) : item.totalSpent > 0 ? (
-          <View style={styles.paidBadge}>
-            <Text style={[styles.paidLabel, { color: colors.statusPaid }]}>
-              Paid
-            </Text>
-          </View>
-        ) : null}
       </Pressable>
     );
   };
+
+  // Divider between contacts
+  const ItemSeparator = () => (
+    <View style={{ paddingVertical: 10, paddingHorizontal: 16 }}>
+      <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
+    </View>
+  );
 
   // Empty State
   const EmptyState = () => (
@@ -638,7 +631,7 @@ export default function ClientsScreen() {
 
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
-                PHONE
+                CELL PHONE
               </Text>
               <TextInput
                 style={[
@@ -652,8 +645,9 @@ export default function ClientsScreen() {
                 placeholder="(555) 123-4567"
                 placeholderTextColor={colors.textTertiary}
                 value={newClientPhone}
-                onChangeText={setNewClientPhone}
+                onChangeText={(text) => setNewClientPhone(formatPhoneAsYouType(text))}
                 keyboardType="phone-pad"
+                maxLength={14}
               />
             </View>
           </View>
@@ -663,7 +657,7 @@ export default function ClientsScreen() {
             <Button
               title={isSaving ? "Saving..." : "Add Client"}
               onPress={handleAddClient}
-              disabled={!newClientName.trim() || isSaving}
+              disabled={!newClientName.trim() || getPhoneDigits(newClientPhone).length !== 10 || isSaving}
             />
           </View>
         </SafeAreaView>
@@ -893,6 +887,7 @@ export default function ClientsScreen() {
         data={filteredAndSortedClients}
         keyExtractor={(item) => item.id}
         renderItem={renderClientCard}
+        ItemSeparatorComponent={ItemSeparator}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -1087,46 +1082,53 @@ const styles = StyleSheet.create({
   clientCard: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
-    borderRadius: 20,
-    marginBottom: 12,
-    elevation: 6,
-    position: "relative",
+    padding: 14,
+    borderRadius: 16,
+    marginBottom: 10,
   },
   topBadge: {
     position: "absolute",
-    top: 8,
-    right: 8,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    bottom: -2,
+    right: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
   },
   avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 14,
+    marginRight: 12,
+    position: "relative",
   },
   avatarText: {
     color: "#FFFFFF",
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "700",
-    textShadowColor: "rgba(0,0,0,0.2)",
+    textShadowColor: "rgba(0,0,0,0.15)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
   clientInfo: {
     flex: 1,
-    marginRight: 8,
+    marginRight: 12,
   },
   clientName: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: "600",
-    letterSpacing: -0.4,
+    letterSpacing: -0.3,
+    marginBottom: 2,
+  },
+  clientSubtitle: {
+    fontSize: 14,
+    fontWeight: "400",
+    letterSpacing: -0.1,
   },
   contactRow: {
     flexDirection: "row",
@@ -1146,14 +1148,14 @@ const styles = StyleSheet.create({
   trustScoreRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 4,
+    marginTop: 6,
   },
   trustScoreBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 4,
     borderRadius: 100,
   },
   trustScoreText: {
@@ -1161,35 +1163,21 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     letterSpacing: -0.2,
   },
-  secondaryInfoRow: {
+  cardRightSection: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  chaseButton: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 2,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 5,
   },
-  secondaryInfoText: {
-    fontSize: 12,
-    fontWeight: "500",
-  },
-  balanceContainer: {
-    alignItems: "flex-end",
-    gap: 6,
-  },
-  balanceAmount: {
-    fontSize: 17,
-    fontWeight: "700",
-    letterSpacing: -0.3,
-    fontVariant: ["tabular-nums"],
-  },
-  autoChaseButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    gap: 4,
-  },
-  autoChaseText: {
-    fontSize: 12,
+  chaseButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13,
     fontWeight: "600",
   },
   proBadgeSmall: {
@@ -1199,20 +1187,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginLeft: 2,
-  },
-  paidBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  paidLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  ltvText: {
-    fontSize: 17,
-    fontWeight: "700",
-    letterSpacing: -0.3,
-    fontVariant: ["tabular-nums"],
   },
 
   // Empty State
