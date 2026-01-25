@@ -7,7 +7,7 @@ import {
   Pressable,
   Linking,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ChevronLeft, ExternalLink, CheckCircle, AlertCircle } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
@@ -28,6 +28,13 @@ export default function StripeOnboardingScreen() {
   useEffect(() => {
     loadStatus();
   }, []);
+
+  // Refresh status when screen comes into focus (e.g., after deep link return)
+  useFocusEffect(
+    React.useCallback(() => {
+      loadStatus();
+    }, [])
+  );
 
   const loadStatus = async () => {
     setIsLoading(true);
@@ -50,10 +57,13 @@ export default function StripeOnboardingScreen() {
 
       if (result?.url) {
         // Open Stripe onboarding in browser
-        await WebBrowser.openBrowserAsync(result.url);
+        const browserResult = await WebBrowser.openBrowserAsync(result.url);
 
-        // Refresh status after returning
-        await loadStatus();
+        // Only refresh if user dismissed the browser (meaning they might have completed)
+        if (browserResult.type === "dismiss" || browserResult.type === "cancel") {
+          await loadStatus();
+        }
+
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
     } catch (err: any) {

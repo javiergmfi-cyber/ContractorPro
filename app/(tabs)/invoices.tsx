@@ -9,10 +9,11 @@ import {
   Animated,
   Dimensions,
   Alert,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Plus, FileText, Mic, Sparkles, ChevronRight } from "lucide-react-native";
+import { Plus, FileText, Mic, Sparkles, ChevronRight, Edit3 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useInvoiceStore } from "@/store/useInvoiceStore";
@@ -92,12 +93,36 @@ export default function InvoicesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
+  const [showOptionsModal, setShowOptionsModal] = useState(false);
 
   // Scroll animation for collapsing header
   const scrollY = useRef(new Animated.Value(0)).current;
 
+  // FAB pulsating animation
+  const fabPulseAnim = useRef(new Animated.Value(1)).current;
+
   useEffect(() => {
     fetchInvoices();
+  }, []);
+
+  // FAB pulsating animation
+  useEffect(() => {
+    const fabPulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(fabPulseAnim, {
+          toValue: 1.05,
+          duration: 1200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fabPulseAnim, {
+          toValue: 1,
+          duration: 1200,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    fabPulse.start();
+    return () => fabPulse.stop();
   }, []);
 
   // Recording timer
@@ -473,33 +498,15 @@ export default function InvoicesScreen() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top"]}>
-        {/* ═══════════════════════════════════════════════════════════
-            COLLAPSING HEADER
-        ═══════════════════════════════════════════════════════════ */}
-        <Animated.View style={[styles.header, { height: headerHeight }]}>
-          <Animated.View
-            style={{
-              transform: [
-                { scale: titleScale },
-                { translateY: titleTranslateY },
-                { translateX: titleTranslateX },
-              ],
-            }}
-          >
-            <Text style={[styles.largeTitle, { color: colors.text }]}>
-              Invoices
-            </Text>
-          </Animated.View>
-
-          <Animated.Text
-            style={[
-              styles.subtitle,
-              { color: colors.textTertiary, opacity: subtitleOpacity },
-            ]}
-          >
+        {/* Header - matches Clients tab */}
+        <View style={styles.header}>
+          <Text style={[styles.largeTitle, { color: colors.text }]}>
+            Invoices
+          </Text>
+          <Text style={[styles.subtitle, { color: colors.textTertiary }]}>
             {allCount} total • {unpaidCount} unpaid
-          </Animated.Text>
-        </Animated.View>
+          </Text>
+        </View>
 
         {/* ═══════════════════════════════════════════════════════════
             SEGMENTED CONTROL
@@ -566,25 +573,152 @@ export default function InvoicesScreen() {
           />
         )}
 
-        {/* ═══════════════════════════════════════════════════════════
-            FLOATING ACTION BUTTON
-        ═══════════════════════════════════════════════════════════ */}
-        <Pressable
-          style={({ pressed }) => [
-            styles.fab,
-            { backgroundColor: colors.primary },
-            pressed && styles.fabPressed,
-          ]}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            router.push("/invoice/create");
-          }}
-        >
-          <Plus size={28} color="#FFFFFF" strokeWidth={2.5} />
-        </Pressable>
+        {/* Floating Action Button - matches Clients tab */}
+        <Animated.View style={{
+          position: "absolute",
+          top: 82,
+          right: 20,
+          transform: [{ scale: fabPulseAnim }],
+        }}>
+          <View style={{
+            width: 44,
+            height: 44,
+            borderRadius: 22,
+            backgroundColor: "#22C55E",
+            alignItems: "center",
+            justifyContent: "center",
+            shadowColor: "#22C55E",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.3,
+            shadowRadius: 8,
+            elevation: 8,
+          }}>
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
+                setShowOptionsModal(true);
+              }}
+              style={{
+                width: 44,
+                height: 44,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Plus size={22} color="#FFFFFF" strokeWidth={2.5} />
+            </Pressable>
+          </View>
+        </Animated.View>
 
         {/* Recording Overlay */}
         <RecordingOverlay visible={isRecording} duration={recordingDuration} />
+
+        {/* Options Modal - Voice or Manual */}
+        <Modal
+          visible={showOptionsModal}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowOptionsModal(false)}
+        >
+          <Pressable
+            style={styles.optionsOverlay}
+            onPress={() => setShowOptionsModal(false)}
+          >
+            <View
+              style={[styles.optionsContainer, { backgroundColor: colors.card }]}
+              onStartShouldSetResponder={() => true}
+            >
+              {/* Handle bar */}
+              <View style={styles.handleBar} />
+
+              <Text style={[styles.optionsTitle, { color: colors.text }]}>
+                New Invoice
+              </Text>
+
+              <Pressable
+                onPress={() => {
+                  setShowOptionsModal(false);
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  handleStartVoiceRecording();
+                }}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  padding: 16,
+                  marginBottom: 12,
+                  borderRadius: 16,
+                  backgroundColor: colors.backgroundSecondary,
+                }}
+              >
+                <View style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: 16,
+                  backgroundColor: colors.primary + "20",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}>
+                  <Mic size={24} color={colors.primary} strokeWidth={2} />
+                </View>
+                <View style={{ flex: 1, marginLeft: 14 }}>
+                  <Text style={{ fontSize: 17, fontWeight: "600", color: colors.text }}>
+                    Voice
+                  </Text>
+                  <Text style={{ fontSize: 14, color: colors.textTertiary, marginTop: 2 }}>
+                    Describe the job, we'll create it
+                  </Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  setShowOptionsModal(false);
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  router.push("/invoice/create");
+                }}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  padding: 16,
+                  marginBottom: 12,
+                  borderRadius: 16,
+                  backgroundColor: colors.backgroundSecondary,
+                }}
+              >
+                <View style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: 16,
+                  backgroundColor: colors.systemBlue + "20",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}>
+                  <Edit3 size={24} color={colors.systemBlue} strokeWidth={2} />
+                </View>
+                <View style={{ flex: 1, marginLeft: 14 }}>
+                  <Text style={{ fontSize: 17, fontWeight: "600", color: colors.text }}>
+                    Manual
+                  </Text>
+                  <Text style={{ fontSize: 14, color: colors.textTertiary, marginTop: 2 }}>
+                    Enter invoice details yourself
+                  </Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setShowOptionsModal(false);
+                }}
+                style={[styles.cancelButton, { backgroundColor: colors.background }]}
+              >
+                <Text style={[styles.cancelButtonText, { color: colors.primary }]}>
+                  Cancel
+                </Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Modal>
       </SafeAreaView>
     </GestureHandlerRootView>
   );
@@ -595,10 +729,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // Header
+  // Header - matches Clients tab exactly
   header: {
     paddingHorizontal: 20,
-    justifyContent: "flex-end",
+    paddingTop: 16,
     paddingBottom: 8,
   },
   largeTitle: {
@@ -790,24 +924,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  // FAB
-  fab: {
-    position: "absolute",
-    bottom: 115,
-    right: 28,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 10,
-  },
-  fabPressed: {
-    transform: [{ scale: 0.95 }],
-    opacity: 0.9,
-  },
 });

@@ -28,11 +28,14 @@ import {
   AlertTriangle,
   Users,
   Edit3,
+  Crown,
+  Bell,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import * as Contacts from "expo-contacts";
 import { useClientStore } from "@/store/useClientStore";
 import { useInvoiceStore } from "@/store/useInvoiceStore";
+import { useSubscriptionStore } from "@/store/useSubscriptionStore";
 import { useTheme } from "@/lib/theme";
 import { Client } from "@/types/database";
 import { Button } from "@/components/ui/Button";
@@ -55,7 +58,9 @@ export default function ClientsScreen() {
     createClient,
   } = useClientStore();
   const { invoices, fetchInvoices } = useInvoiceStore();
+  const { isPro } = useSubscriptionStore();
 
+  const [activeTab, setActiveTab] = useState<"all" | "unpaid" | "paid">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
@@ -69,6 +74,7 @@ export default function ClientsScreen() {
   const searchWidthAnim = useRef(new Animated.Value(1)).current;
   const fabGlowAnim = useRef(new Animated.Value(1)).current;
   const emptyButtonGlowAnim = useRef(new Animated.Value(1)).current;
+  const fabPulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     fetchClients();
@@ -94,7 +100,7 @@ export default function ClientsScreen() {
     const emptyButtonBreathe = Animated.loop(
       Animated.sequence([
         Animated.timing(emptyButtonGlowAnim, {
-          toValue: 1.08,
+          toValue: 1.03,
           duration: 1500,
           useNativeDriver: true,
         }),
@@ -105,11 +111,27 @@ export default function ClientsScreen() {
         }),
       ])
     );
+    const fabPulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(fabPulseAnim, {
+          toValue: 1.05,
+          duration: 1200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fabPulseAnim, {
+          toValue: 1,
+          duration: 1200,
+          useNativeDriver: true,
+        }),
+      ])
+    );
     breathe.start();
     emptyButtonBreathe.start();
+    fabPulse.start();
     return () => {
       breathe.stop();
       emptyButtonBreathe.stop();
+      fabPulse.stop();
     };
   }, []);
 
@@ -159,17 +181,54 @@ export default function ClientsScreen() {
     });
   }, [clients, invoices]);
 
-  // Sort by Outstanding Balance first (who owes money), then by LTV
-  const sortedClients = useMemo(() => {
-    return [...clientsWithStats].sort((a, b) => {
-      // First sort by outstanding balance (highest first)
-      if (a.outstandingBalance !== b.outstandingBalance) {
-        return b.outstandingBalance - a.outstandingBalance;
+  // Set default tab based on whether there are unpaid invoices (only on initial load)
+  const [hasSetInitialTab, setHasSetInitialTab] = useState(false);
+  useEffect(() => {
+    if (!hasSetInitialTab && clientsWithStats.length > 0) {
+      const clientsWithUnpaid = clientsWithStats.filter((c) => c.outstandingBalance > 0);
+      if (clientsWithUnpaid.length > 0) {
+        setActiveTab("unpaid");
+      } else {
+        setActiveTab("all");
       }
-      // Then by LTV
-      return b.totalSpent - a.totalSpent;
-    });
-  }, [clientsWithStats]);
+      setHasSetInitialTab(true);
+    }
+  }, [clientsWithStats, hasSetInitialTab]);
+
+  // Filter and sort clients based on active tab
+  const filteredAndSortedClients = useMemo(() => {
+    let filtered = [...clientsWithStats];
+
+    // Filter by tab
+    if (activeTab === "unpaid") {
+      filtered = filtered.filter((c) => c.outstandingBalance > 0);
+      // Sort by amount owed (highest first)
+      filtered.sort((a, b) => b.outstandingBalance - a.outstandingBalance);
+    } else if (activeTab === "paid") {
+      filtered = filtered.filter((c) => c.outstandingBalance === 0 && c.totalSpent > 0);
+      // Sort by LTV (highest first)
+      filtered.sort((a, b) => b.totalSpent - a.totalSpent);
+    } else {
+      // "all" tab - sort alphabetically
+      filtered.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    // Apply search filter
+    if (searchQuery) {
+      filtered = filtered.filter(
+        (client) =>
+          client.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          client.email?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+
+    return filtered;
+  }, [clientsWithStats, activeTab, searchQuery]);
+
+  // Stats for tabs
+  const unpaidClientsCount = clientsWithStats.filter((c) => c.outstandingBalance > 0).length;
+  const paidClientsCount = clientsWithStats.filter((c) => c.outstandingBalance === 0 && c.totalSpent > 0).length;
+  const totalOutstanding = clientsWithStats.reduce((sum, c) => sum + c.outstandingBalance, 0);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -178,14 +237,9 @@ export default function ClientsScreen() {
     setRefreshing(false);
   }, [fetchClients, fetchInvoices]);
 
-  const filteredClients = sortedClients.filter((client) =>
-    client.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    client.email?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
   const handleClientPress = (client: Client) => {
     Haptics.selectionAsync();
-    // TODO: Navigate to client detail
+    router.push(`/client/${client.id}`);
   };
 
   const handleAddClient = async () => {
@@ -421,20 +475,47 @@ export default function ClientsScreen() {
           )}
         </View>
 
-        {/* Outstanding Balance (PRIMARY) - What they OWE NOW */}
+        {/* Outstanding Balance with Auto-Chase button */}
         {item.outstandingBalance > 0 ? (
           <View style={styles.balanceContainer}>
-            <Text style={[styles.balanceLabel, { color: colors.textTertiary }]}>
-              Outstanding
-            </Text>
-            <Text style={[styles.balanceAmount, { color: colors.statusOverdue }]}>
+            <Text style={[styles.balanceAmount, { color: colors.systemRed }]}>
               {formatCurrency(item.outstandingBalance)}
             </Text>
+            {/* Auto-Chase Button */}
+            <Pressable
+              onPress={(e) => {
+                e.stopPropagation();
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                if (!isPro) {
+                  router.push("/paywall?trigger=auto_chase");
+                } else {
+                  // TODO: Trigger auto-chase for this client
+                  router.push("/paywall?trigger=auto_chase");
+                }
+              }}
+              style={({ pressed }) => [
+                styles.autoChaseButton,
+                { backgroundColor: colors.primary + "15" },
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Bell size={12} color={colors.primary} />
+              <Text style={[styles.autoChaseText, { color: colors.primary }]}>
+                Chase
+              </Text>
+              {!isPro && (
+                <View style={[styles.proBadgeSmall, { backgroundColor: colors.systemOrange }]}>
+                  <Crown size={8} color="#FFF" />
+                </View>
+              )}
+            </Pressable>
           </View>
         ) : item.totalSpent > 0 ? (
-          <Text style={[styles.paidLabel, { color: colors.statusPaid }]}>
-            Paid
-          </Text>
+          <View style={styles.paidBadge}>
+            <Text style={[styles.paidLabel, { color: colors.statusPaid }]}>
+              Paid
+            </Text>
+          </View>
         ) : null}
       </Pressable>
     );
@@ -451,35 +532,39 @@ export default function ClientsScreen() {
         Add your first client to start tracking
       </Text>
       <View style={styles.emptyButtonContainer}>
-        {/* Glow layer */}
         <Animated.View
-          style={[
-            styles.emptyButtonGlow,
-            {
-              backgroundColor: "#4CD964", // Vivid iOS green
-              transform: [{ scale: emptyButtonGlowAnim }],
-            },
-          ]}
-        />
-        <Pressable
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
-            setShowOptionsModal(true);
+          style={{
+            transform: [{ scale: emptyButtonGlowAnim }],
           }}
-          style={({ pressed }) => [
-            styles.emptyButton,
-            {
-              backgroundColor: "#4CD964", // Vivid iOS green
-              shadowColor: "#4CD964", // Green shadow
-            },
-            pressed && { transform: [{ scale: 0.95 }], opacity: 0.9 },
-          ]}
         >
-          <View style={styles.emptyButtonContent}>
-            <Plus size={20} color="#FFFFFF" strokeWidth={2.5} />
-            <Text style={styles.emptyButtonText}>Add Client</Text>
-          </View>
-        </Pressable>
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
+              setShowOptionsModal(true);
+            }}
+            style={({ pressed }) => [
+              {
+                backgroundColor: "#22C55E",
+                paddingVertical: 16,
+                paddingHorizontal: 32,
+                borderRadius: 9999,
+                alignItems: "center",
+                justifyContent: "center",
+                shadowColor: "#22C55E",
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.3,
+                shadowRadius: 12,
+                elevation: 12,
+              },
+              pressed && { transform: [{ scale: 0.95 }], opacity: 0.9 },
+            ]}
+          >
+            <View style={styles.emptyButtonContent}>
+              <Plus size={20} color="#FFFFFF" strokeWidth={2.5} />
+              <Text style={{ color: "#FFFFFF", fontWeight: "600", fontSize: 18 }}>Add Client</Text>
+            </View>
+          </Pressable>
+        </Animated.View>
       </View>
     </View>
   );
@@ -590,7 +675,7 @@ export default function ClientsScreen() {
   const renderOptionsModal = () => (
     <Modal
       visible={showOptionsModal}
-      animationType="fade"
+      animationType="slide"
       transparent={true}
       onRequestClose={() => setShowOptionsModal(false)}
     >
@@ -598,49 +683,75 @@ export default function ClientsScreen() {
         style={styles.optionsOverlay}
         onPress={() => setShowOptionsModal(false)}
       >
-        <View style={[styles.optionsContainer, { backgroundColor: colors.card }]}>
+        <View
+          style={[styles.optionsContainer, { backgroundColor: colors.card }]}
+          onStartShouldSetResponder={() => true}
+        >
+          {/* Handle bar */}
+          <View style={styles.handleBar} />
+
           <Text style={[styles.optionsTitle, { color: colors.text }]}>
             Add Client
           </Text>
 
           <Pressable
             onPress={handleImportFromContacts}
-            style={({ pressed }) => [
-              styles.optionButton,
-              { backgroundColor: pressed ? colors.backgroundSecondary : "transparent" },
-            ]}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              padding: 16,
+              marginBottom: 12,
+              borderRadius: 16,
+              backgroundColor: colors.backgroundSecondary,
+            }}
           >
-            <View style={[styles.optionIconContainer, { backgroundColor: colors.primary + "15" }]}>
-              <Users size={22} color={colors.primary} strokeWidth={2} />
+            <View style={{
+              width: 52,
+              height: 52,
+              borderRadius: 16,
+              backgroundColor: colors.primary + "20",
+              alignItems: "center",
+              justifyContent: "center",
+            }}>
+              <Users size={24} color={colors.primary} strokeWidth={2} />
             </View>
-            <View style={styles.optionTextContainer}>
-              <Text style={[styles.optionLabel, { color: colors.text }]}>
+            <View style={{ flex: 1, marginLeft: 14 }}>
+              <Text style={{ fontSize: 17, fontWeight: "600", color: colors.text }}>
                 Import from Contacts
               </Text>
-              <Text style={[styles.optionDescription, { color: colors.textTertiary }]}>
+              <Text style={{ fontSize: 14, color: colors.textTertiary, marginTop: 2 }}>
                 Select from your phone contacts
               </Text>
             </View>
           </Pressable>
 
-          <View style={[styles.optionDivider, { backgroundColor: colors.border }]} />
-
           <Pressable
             onPress={handleAddManually}
-            style={({ pressed }) => [
-              styles.optionButton,
-              { backgroundColor: pressed ? colors.backgroundSecondary : "transparent" },
-            ]}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              padding: 16,
+              marginBottom: 12,
+              borderRadius: 16,
+              backgroundColor: colors.backgroundSecondary,
+            }}
           >
-            <View style={[styles.optionIconContainer, { backgroundColor: colors.systemOrange + "15" }]}>
-              <Edit3 size={22} color={colors.systemOrange} strokeWidth={2} />
+            <View style={{
+              width: 52,
+              height: 52,
+              borderRadius: 16,
+              backgroundColor: colors.systemOrange + "20",
+              alignItems: "center",
+              justifyContent: "center",
+            }}>
+              <Edit3 size={24} color={colors.systemOrange} strokeWidth={2} />
             </View>
-            <View style={styles.optionTextContainer}>
-              <Text style={[styles.optionLabel, { color: colors.text }]}>
-                Add Manually
+            <View style={{ flex: 1, marginLeft: 14 }}>
+              <Text style={{ fontSize: 17, fontWeight: "600", color: colors.text }}>
+                Enter Manually
               </Text>
-              <Text style={[styles.optionDescription, { color: colors.textTertiary }]}>
-                Enter client details yourself
+              <Text style={{ fontSize: 14, color: colors.textTertiary, marginTop: 2 }}>
+                Type in client details
               </Text>
             </View>
           </Pressable>
@@ -650,9 +761,9 @@ export default function ClientsScreen() {
               Haptics.selectionAsync();
               setShowOptionsModal(false);
             }}
-            style={[styles.cancelButton, { backgroundColor: colors.backgroundSecondary }]}
+            style={[styles.cancelButton, { backgroundColor: colors.background }]}
           >
-            <Text style={[styles.cancelButtonText, { color: colors.text }]}>
+            <Text style={[styles.cancelButtonText, { color: colors.primary }]}>
               Cancel
             </Text>
           </Pressable>
@@ -661,13 +772,19 @@ export default function ClientsScreen() {
     </Modal>
   );
 
+  // Handle tab change
+  const handleTabChange = (tab: "all" | "unpaid" | "paid") => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setActiveTab(tab);
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={[styles.largeTitle, { color: colors.text }]}>Clients</Text>
         <Text style={[styles.subtitle, { color: colors.textTertiary }]}>
-          {clients.length} total • Sorted by value
+          {clients.length} total{totalOutstanding > 0 ? ` • ${formatCurrency(totalOutstanding)} outstanding` : ""}
         </Text>
       </View>
 
@@ -709,9 +826,71 @@ export default function ClientsScreen() {
         </Animated.View>
       </View>
 
+      {/* Segmented Control */}
+      <View style={styles.segmentedControlContainer}>
+        <View style={[styles.segmentedControl, { backgroundColor: colors.backgroundSecondary }]}>
+          <Pressable
+            onPress={() => handleTabChange("all")}
+            style={[
+              styles.segmentButton,
+              activeTab === "all" && [styles.segmentButtonActive, { backgroundColor: colors.card }],
+            ]}
+          >
+            <Text
+              style={[
+                styles.segmentText,
+                { color: activeTab === "all" ? colors.text : colors.textTertiary },
+                activeTab === "all" && styles.segmentTextActive,
+              ]}
+            >
+              All
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => handleTabChange("unpaid")}
+            style={[
+              styles.segmentButton,
+              activeTab === "unpaid" && [styles.segmentButtonActive, { backgroundColor: colors.card }],
+            ]}
+          >
+            <Text
+              style={[
+                styles.segmentText,
+                { color: activeTab === "unpaid" ? colors.text : colors.textTertiary },
+                activeTab === "unpaid" && styles.segmentTextActive,
+              ]}
+            >
+              Unpaid
+            </Text>
+            {unpaidClientsCount > 0 && (
+              <View style={[styles.segmentBadge, { backgroundColor: colors.systemRed }]}>
+                <Text style={styles.segmentBadgeText}>{unpaidClientsCount}</Text>
+              </View>
+            )}
+          </Pressable>
+          <Pressable
+            onPress={() => handleTabChange("paid")}
+            style={[
+              styles.segmentButton,
+              activeTab === "paid" && [styles.segmentButtonActive, { backgroundColor: colors.card }],
+            ]}
+          >
+            <Text
+              style={[
+                styles.segmentText,
+                { color: activeTab === "paid" ? colors.text : colors.textTertiary },
+                activeTab === "paid" && styles.segmentTextActive,
+              ]}
+            >
+              Paid
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+
       {/* Client List */}
       <FlatList
-        data={filteredClients}
+        data={filteredAndSortedClients}
         keyExtractor={(item) => item.id}
         renderItem={renderClientCard}
         contentContainerStyle={styles.listContent}
@@ -732,37 +911,67 @@ export default function ClientsScreen() {
             </View>
           ) : clients.length === 0 ? (
             <EmptyState />
+          ) : activeTab === "unpaid" ? (
+            <View style={styles.tabEmptyState}>
+              <View style={[styles.tabEmptyIcon, { backgroundColor: colors.statusPaid + "15" }]}>
+                <Zap size={32} color={colors.statusPaid} />
+              </View>
+              <Text style={[styles.tabEmptyTitle, { color: colors.text }]}>All Caught Up!</Text>
+              <Text style={[styles.tabEmptySubtitle, { color: colors.textTertiary }]}>
+                No outstanding invoices
+              </Text>
+            </View>
+          ) : activeTab === "paid" ? (
+            <View style={styles.tabEmptyState}>
+              <View style={[styles.tabEmptyIcon, { backgroundColor: colors.textTertiary + "15" }]}>
+                <Clock size={32} color={colors.textTertiary} />
+              </View>
+              <Text style={[styles.tabEmptyTitle, { color: colors.text }]}>No Paid Clients Yet</Text>
+              <Text style={[styles.tabEmptySubtitle, { color: colors.textTertiary }]}>
+                Clients will appear here once they pay
+              </Text>
+            </View>
           ) : null
         }
       />
 
       {/* Floating Action Button - Only show when there are clients */}
       {clients.length > 0 && (
-        <View style={styles.fabContainer}>
-          {/* Glow layer */}
-          <Animated.View
-            style={[
-              styles.fabGlow,
-              {
-                backgroundColor: colors.primary,
-                transform: [{ scale: fabGlowAnim }],
-              },
-            ]}
-          />
-          <Pressable
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
-              setShowOptionsModal(true);
-            }}
-            style={({ pressed }) => [
-              styles.fab,
-              { backgroundColor: colors.primary },
-              pressed && styles.fabPressed,
-            ]}
-          >
-            <Plus size={28} color="#FFFFFF" strokeWidth={2.5} />
-          </Pressable>
-        </View>
+        <Animated.View style={{
+          position: "absolute",
+          top: 82,
+          right: 20,
+          transform: [{ scale: fabPulseAnim }],
+        }}>
+          <View style={{
+            width: 44,
+            height: 44,
+            borderRadius: 22,
+            backgroundColor: "#22C55E",
+            alignItems: "center",
+            justifyContent: "center",
+            shadowColor: "#22C55E",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.3,
+            shadowRadius: 8,
+            elevation: 8,
+          }}>
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
+                setShowOptionsModal(true);
+              }}
+              style={{
+                width: 44,
+                height: 44,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Plus size={22} color="#FFFFFF" strokeWidth={2.5} />
+            </Pressable>
+          </View>
+        </Animated.View>
       )}
 
       {renderOptionsModal()}
@@ -792,6 +1001,54 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     marginTop: 4,
     letterSpacing: -0.2,
+  },
+
+  // Segmented Control
+  segmentedControlContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  segmentedControl: {
+    flexDirection: "row",
+    borderRadius: 10,
+    padding: 3,
+  },
+  segmentButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  segmentButtonActive: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  segmentText: {
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  segmentTextActive: {
+    fontWeight: "600",
+  },
+  segmentBadge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 5,
+  },
+  segmentBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "700",
   },
 
   // Search
@@ -915,19 +1172,37 @@ const styles = StyleSheet.create({
   },
   balanceContainer: {
     alignItems: "flex-end",
-  },
-  balanceLabel: {
-    fontSize: 10,
-    fontWeight: "500",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 2,
+    gap: 6,
   },
   balanceAmount: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "700",
     letterSpacing: -0.3,
     fontVariant: ["tabular-nums"],
+  },
+  autoChaseButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 4,
+  },
+  autoChaseText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  proBadgeSmall: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 2,
+  },
+  paidBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   paidLabel: {
     fontSize: 14,
@@ -973,16 +1248,18 @@ const styles = StyleSheet.create({
   },
   emptyButtonGlow: {
     position: "absolute",
-    width: 200,
-    height: 56,
+    width: 180,
+    height: 52,
     borderRadius: 100,
-    opacity: 0.3,
+    opacity: 0.12,
+    backgroundColor: "#00D632",
   },
   emptyButton: {
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 100,
-    shadowColor: "#000",
+    backgroundColor: "#00D632",
+    shadowColor: "#00D632",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
     shadowRadius: 16,
@@ -1013,22 +1290,23 @@ const styles = StyleSheet.create({
   // FAB
   fabContainer: {
     position: "absolute",
-    top: 93,
+    top: 100,
     right: 36,
     alignItems: "center",
     justifyContent: "center",
   },
   fabGlow: {
     position: "absolute",
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     opacity: 0.3,
   },
   fab: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#22C55E",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
@@ -1089,35 +1367,44 @@ const styles = StyleSheet.create({
   // Options Modal
   optionsOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
     justifyContent: "flex-end",
   },
   optionsContainer: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 24,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingTop: 12,
     paddingBottom: 40,
     paddingHorizontal: 20,
+  },
+  handleBar: {
+    width: 36,
+    height: 5,
+    backgroundColor: "rgba(0, 0, 0, 0.15)",
+    borderRadius: 3,
+    alignSelf: "center",
+    marginBottom: 20,
   },
   optionsTitle: {
     fontSize: 20,
     fontWeight: "700",
     letterSpacing: -0.4,
     textAlign: "center",
-    marginBottom: 24,
+    marginBottom: 20,
   },
   optionButton: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 16,
-    paddingHorizontal: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     borderRadius: 16,
-    gap: 16,
+    gap: 14,
+    marginBottom: 10,
   },
   optionIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1132,7 +1419,7 @@ const styles = StyleSheet.create({
   optionDescription: {
     fontSize: 14,
     fontWeight: "400",
-    marginTop: 2,
+    marginTop: 3,
   },
   optionDivider: {
     height: StyleSheet.hairlineWidth,
@@ -1140,7 +1427,7 @@ const styles = StyleSheet.create({
     marginVertical: 4,
   },
   cancelButton: {
-    marginTop: 16,
+    marginTop: 10,
     paddingVertical: 16,
     borderRadius: 14,
     alignItems: "center",
@@ -1148,5 +1435,32 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     fontSize: 17,
     fontWeight: "600",
+  },
+
+  // Tab Empty States
+  tabEmptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
+    paddingHorizontal: 40,
+  },
+  tabEmptyIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
+  },
+  tabEmptyTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    letterSpacing: -0.4,
+    marginBottom: 8,
+  },
+  tabEmptySubtitle: {
+    fontSize: 15,
+    fontWeight: "500",
+    textAlign: "center",
   },
 });

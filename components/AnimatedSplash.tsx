@@ -65,6 +65,7 @@ export function AnimatedSplash({ onComplete }: AnimatedSplashProps) {
   const exitScale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
+    console.log("AnimatedSplash: Starting splash sequence");
     runSplashSequence();
   }, []);
 
@@ -254,6 +255,7 @@ export function AnimatedSplash({ onComplete }: AnimatedSplashProps) {
         useNativeDriver: true,
       }),
     ]).start(() => {
+      console.log("AnimatedSplash: Animation complete, calling onComplete");
       onComplete();
     });
   };

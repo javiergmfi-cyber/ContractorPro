@@ -15,7 +15,7 @@ import {
   Keyboard,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import {
   Camera,
   Check,
@@ -266,6 +266,13 @@ export default function Profile() {
     ]).start();
   }, []);
 
+  // Refresh profile when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchProfile();
+    }, [])
+  );
+
   useEffect(() => {
     if (reminderSettings?.message_template) {
       setTemplateText(reminderSettings.message_template);
@@ -278,6 +285,23 @@ export default function Profile() {
       setBusinessName(profile.business_name || "");
       setFullName(profile.full_name || "");
       setTaxRate(profile.tax_rate?.toString() || "0");
+    }
+  }, [profile]);
+
+  // Sync onboarding status with profile data
+  const { completeTask, setupTasks } = useOnboardingStore();
+  useEffect(() => {
+    if (profile?.stripe_account_id) {
+      const stripeTask = setupTasks.find(t => t.id === "stripe_connect");
+      if (stripeTask && !stripeTask.completed) {
+        completeTask("stripe_connect");
+      }
+    }
+    if (profile?.logo_url) {
+      const logoTask = setupTasks.find(t => t.id === "upload_logo");
+      if (logoTask && !logoTask.completed) {
+        completeTask("upload_logo");
+      }
     }
   }, [profile]);
 
@@ -1265,18 +1289,22 @@ const createStyles = (colors: any, isDark: boolean, spacing: any, radius: any, t
       paddingBottom: 120,
     },
     header: {
-      paddingHorizontal: spacing.lg,
-      paddingTop: spacing.md,
-      paddingBottom: spacing.md,
+      paddingHorizontal: 20,
+      paddingTop: 16,
+      paddingBottom: 8,
     },
     title: {
-      ...typography.largeTitle,
+      fontSize: 34,
+      fontWeight: "700" as const,
+      letterSpacing: -0.7,
       color: colors.text,
     },
     subtitle: {
-      ...typography.subhead,
+      fontSize: 15,
+      fontWeight: "500" as const,
+      marginTop: 4,
+      letterSpacing: -0.2,
       color: colors.textTertiary,
-      marginTop: spacing.xs,
     },
     // Stripe Urgency Banner
     stripeUrgencyBanner: {

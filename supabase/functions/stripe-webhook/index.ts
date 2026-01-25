@@ -35,10 +35,10 @@ serve(async (req) => {
       return new Response("Missing signature", { status: 400 });
     }
 
-    // Verify webhook signature
+    // Verify webhook signature (use async version for Deno)
     let event: Stripe.Event;
     try {
-      event = stripe.webhooks.constructEvent(body, signature, STRIPE_WEBHOOK_SECRET);
+      event = await stripe.webhooks.constructEventAsync(body, signature, STRIPE_WEBHOOK_SECRET);
     } catch (err) {
       console.error("Webhook signature verification failed:", err);
       return new Response(`Webhook Error: ${err.message}`, { status: 400 });

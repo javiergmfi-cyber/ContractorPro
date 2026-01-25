@@ -15,35 +15,69 @@ export async function getConnectOnboardingUrl(): Promise<{
   accountId: string;
 } | null> {
   try {
+    // Check if user is logged in first
+    const { data: { session } } = await supabase.auth.getSession();
+    console.log("User session status:", session ? "Logged in" : "Not logged in");
+
+    if (!session) {
+      throw new Error("You must be logged in to connect Stripe");
+    }
+
+    console.log("Invoking Edge Function...");
+    console.log("Session access_token exists:", !!session.access_token);
+
     const { data, error } = await supabase.functions.invoke<{
       url: string;
       account_id: string;
     }>("create-connect-account", {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
       body: {
         return_url: "contractorpro://stripe/return",
         refresh_url: "contractorpro://stripe/refresh",
       },
     });
 
+    console.log("Edge Function completed. Has error:", !!error, "Has data:", !!data);
+
     if (error) {
       console.error("Edge Function error:", error);
+      console.error("Error status:", error.context?.status);
 
-      // Provide helpful error message
-      if (error.message?.includes("non-2xx")) {
-        throw new Error(
-          "Stripe setup incomplete. Please ensure:\n" +
-          "1. Edge Function is deployed\n" +
-          "2. STRIPE_SECRET_KEY is set in Supabase secrets\n" +
-          "3. Supabase project is properly configured"
-        );
+      // Try to read the actual error message from the response
+      if (error.context) {
+        try {
+          // Try to get text from the response
+          const errorResponse = await error.context.text();
+          console.error("Error message from server:", errorResponse);
+        } catch (e) {
+          console.error("Could not read error response text");
+        }
       }
 
-      throw error;
+      console.error("Response data:", data);
+
+      throw new Error(
+        `Stripe connection failed: ${error.message || "Unknown error"}`
+      );
     }
 
-    return data
-      ? { url: data.url, accountId: data.account_id }
-      : null;
+    console.log("Edge Function success! Data:", data);
+
+    if (!data) {
+      console.error("No data returned from Edge Function");
+      throw new Error("No response from Stripe service");
+    }
+
+    if (!data.url) {
+      console.error("No URL in response:", data);
+      throw new Error("Invalid response from Stripe service");
+    }
+
+    console.log("Returning onboarding URL:", data.url);
+
+    return { url: data.url, accountId: data.account_id };
   } catch (error: any) {
     console.error("Error getting onboarding URL:", error);
     throw new Error(error.message || "Failed to connect to Stripe");

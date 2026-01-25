@@ -63,17 +63,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+    // Get initial session with timeout
+    console.log("AuthContext: Starting to get session...");
 
-      if (session?.user) {
-        fetchProfile(session.user.id).then(setProfile);
-      }
-
+    const sessionTimeout = setTimeout(() => {
+      console.warn("AuthContext: Session fetch timed out after 5 seconds, proceeding without auth");
       setIsLoading(false);
-    });
+    }, 5000);
+
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        clearTimeout(sessionTimeout);
+        console.log("AuthContext: Got session:", session ? "logged in" : "no session");
+        setSession(session);
+        setUser(session?.user ?? null);
+
+        if (session?.user) {
+          console.log("AuthContext: Fetching profile for user:", session.user.id);
+          fetchProfile(session.user.id).then(setProfile);
+        }
+
+        console.log("AuthContext: Setting isLoading to false");
+        setIsLoading(false);
+      })
+      .catch((error) => {
+        clearTimeout(sessionTimeout);
+        console.error("AuthContext: Error getting session:", error);
+        setIsLoading(false);
+      });
 
     // Listen for auth changes
     const {

@@ -8,9 +8,9 @@ import { useColorScheme, Platform } from "react-native";
 
 export const colors = {
   light: {
-    // Brand Green for main actions
-    primary: "#00D632",
-    primaryDark: "#00B82B",
+    // Brand Green for main actions - Vivid neon green
+    primary: "#22C55E",
+    primaryDark: "#16A34A",
 
     // iOS Electric Status Colors
     statusPaid: "#34C759",      // iOS Green
@@ -49,9 +49,9 @@ export const colors = {
     overlay: "rgba(0, 0, 0, 0.5)",
   },
   dark: {
-    // Brand Green for main actions
-    primary: "#00D632",
-    primaryDark: "#00FF41",
+    // Brand Green for main actions - Vivid neon green
+    primary: "#22C55E",
+    primaryDark: "#4ADE80",
 
     // iOS Electric Status Colors (Dark Mode variants)
     statusPaid: "#30D158",      // iOS Green Dark

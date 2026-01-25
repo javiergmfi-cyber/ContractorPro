@@ -12,7 +12,7 @@ import {
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import {
   ChevronRight,
@@ -117,6 +117,30 @@ export default function HomeScreen() {
       }),
     ]).start();
   }, []);
+
+  // Sync onboarding status with profile data
+  const { completeTask } = useOnboardingStore();
+  useEffect(() => {
+    if (profile?.stripe_account_id) {
+      const stripeTask = setupTasks.find(t => t.id === "stripe_connect");
+      if (stripeTask && !stripeTask.completed) {
+        completeTask("stripe_connect");
+      }
+    }
+    if (profile?.logo_url) {
+      const logoTask = setupTasks.find(t => t.id === "upload_logo");
+      if (logoTask && !logoTask.completed) {
+        completeTask("upload_logo");
+      }
+    }
+  }, [profile]);
+
+  // Refresh profile when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchProfile();
+    }, [])
+  );
 
   // Recording timer
   useEffect(() => {
