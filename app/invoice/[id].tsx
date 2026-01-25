@@ -31,6 +31,7 @@ import {
   ChevronRight,
   Crown,
   Star,
+  Sparkles,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
@@ -75,6 +76,7 @@ export default function InvoiceDetail() {
   const [isSending, setIsSending] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [autoChaseEnabled, setAutoChaseEnabled] = useState(false);
+  const [autoNudgeEnabled, setAutoNudgeEnabled] = useState(false);
   const [showReviewPrompt, setShowReviewPrompt] = useState(false);
 
   // Scroll animation
@@ -163,6 +165,7 @@ export default function InvoiceDetail() {
       if (inv) {
         setInvoice(inv);
         setAutoChaseEnabled(inv.auto_chase_enabled || false);
+        setAutoNudgeEnabled(inv.auto_nudge_enabled || false);
         // Fetch invoice items
         const items = await db.getInvoiceItems(inv.id);
         setInvoiceItems(items || []);
@@ -419,6 +422,18 @@ export default function InvoiceDetail() {
     setAutoChaseEnabled(value);
     await updateInvoice(invoice.id, { auto_chase_enabled: value });
     setInvoice({ ...invoice, auto_chase_enabled: value });
+  };
+
+  const handleAutoNudgeToggle = async (value: boolean) => {
+    if (!isPro) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      router.push("/paywall?trigger=auto_nudge");
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setAutoNudgeEnabled(value);
+    await updateInvoice(invoice.id, { auto_nudge_enabled: value });
+    setInvoice({ ...invoice, auto_nudge_enabled: value });
   };
 
   const formatDate = (dateString: string) => {
@@ -695,8 +710,9 @@ export default function InvoiceDetail() {
           </Pressable>
         )}
 
-        {/* Auto-Chase Toggle (for sent/overdue invoices) */}
-        {(invoice.status === "sent" || invoice.status === "overdue" || invoice.status === "deposit_paid") && (
+        {/* Auto-Chase Toggle (for sent/overdue invoices after deposit paid or no deposit) */}
+        {(invoice.status === "sent" || invoice.status === "overdue" || invoice.status === "deposit_paid") &&
+          !(invoice.status === "sent" && invoice.deposit_enabled && !invoice.deposit_paid_at) && (
           <Pressable
             onPress={() => handleAutoChaseToggle(!autoChaseEnabled)}
             style={[
@@ -732,6 +748,48 @@ export default function InvoiceDetail() {
               value={autoChaseEnabled}
               onValueChange={handleAutoChaseToggle}
               trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor="#fff"
+            />
+          </Pressable>
+        )}
+
+        {/* Auto-Nudge Toggle (for estimates awaiting deposit approval) */}
+        {invoice.status === "sent" && invoice.deposit_enabled && !invoice.deposit_paid_at && (
+          <Pressable
+            onPress={() => handleAutoNudgeToggle(!autoNudgeEnabled)}
+            style={[
+              styles.autoChaseCard,
+              {
+                backgroundColor: autoNudgeEnabled ? colors.systemBlue + "10" : colors.backgroundSecondary,
+                borderRadius: radius.md,
+              },
+            ]}
+          >
+            <View style={styles.autoChaseContent}>
+              <View style={styles.autoChaseHeader}>
+                <Sparkles size={18} color={autoNudgeEnabled ? colors.systemBlue : colors.textSecondary} />
+                <Text style={[typography.footnote, { color: colors.text, fontWeight: "600", marginLeft: spacing.xs }]}>
+                  Auto-Nudge
+                </Text>
+                {!isPro && (
+                  <View style={[styles.proBadge, { backgroundColor: colors.systemOrange + "20" }]}>
+                    <Crown size={12} color={colors.systemOrange} />
+                    <Text style={[typography.caption2, { color: colors.systemOrange, fontWeight: "600", marginLeft: 2 }]}>
+                      PRO
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <Text style={[typography.caption1, { color: colors.textSecondary, marginTop: 2 }]}>
+                {autoNudgeEnabled
+                  ? "Sending friendly follow-ups until they approve."
+                  : "Gently remind clients about your estimate."}
+              </Text>
+            </View>
+            <Switch
+              value={autoNudgeEnabled}
+              onValueChange={handleAutoNudgeToggle}
+              trackColor={{ false: colors.border, true: colors.systemBlue }}
               thumbColor="#fff"
             />
           </Pressable>

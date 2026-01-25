@@ -22,6 +22,9 @@ import {
   Mic,
   RefreshCw,
   Eye,
+  Sparkles,
+  Clock,
+  CreditCard,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { useSubscriptionStore } from "@/store/useSubscriptionStore";
@@ -57,6 +60,11 @@ const VALUE_PROPS = [
     icon: Zap,
     title: "Bad Cop Auto-Collections",
     description: "AI that chases payments so you don't have to",
+  },
+  {
+    icon: Sparkles,
+    title: "Auto-Nudge",
+    description: "Follow up on estimates automatically",
   },
   {
     icon: Eye,
@@ -112,6 +120,10 @@ const CONTEXTUAL_MESSAGES: Record<string, { headline: string; subheadline: strin
     headline: "Stop Chasing\nPayments.",
     subheadline: "Let AI follow up until they pay.",
   },
+  auto_nudge: {
+    headline: "Convert More\nEstimates.",
+    subheadline: "Gentle follow-ups until they say yes.",
+  },
 };
 
 export default function PaywallScreen() {
@@ -126,10 +138,15 @@ export default function PaywallScreen() {
     purchasePackage,
     restorePurchases,
     fetchOfferings,
+    hasClaimedTrial,
+    isInTrial,
+    getTrialDaysRemaining,
+    startTrial,
   } = useSubscriptionStore();
 
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState<PurchasesPackage | null>(null);
+  const trialDaysRemaining = getTrialDaysRemaining();
 
   // Get monthly package from offerings
   const monthlyPackage = offerings?.monthly || null;
@@ -231,6 +248,39 @@ export default function PaywallScreen() {
   };
 
   const handleStartTrial = async () => {
+    const packageToPurchase = selectedPackage || monthlyPackage;
+    if (!packageToPurchase) {
+      Alert.alert("Error", "Unable to load subscription options. Please try again.");
+      return;
+    }
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    setIsPurchasing(true);
+
+    try {
+      // If user hasn't claimed trial yet, start trial first
+      if (!hasClaimedTrial) {
+        await startTrial();
+      }
+
+      // Purchase via RevenueCat (trial configured in dashboard)
+      const result = await purchasePackage(packageToPurchase);
+
+      setIsPurchasing(false);
+
+      if (result.success) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        router.back();
+      } else if (result.error !== "cancelled") {
+        Alert.alert("Purchase Failed", result.error || "Something went wrong. Please try again.");
+      }
+    } catch (error: any) {
+      setIsPurchasing(false);
+      Alert.alert("Error", error.message || "Something went wrong. Please try again.");
+    }
+  };
+
+  const handleSubscribe = async () => {
     const packageToPurchase = selectedPackage || monthlyPackage;
     if (!packageToPurchase) {
       Alert.alert("Error", "Unable to load subscription options. Please try again.");
@@ -414,20 +464,28 @@ export default function PaywallScreen() {
             <BlurView intensity={20} tint="dark" style={styles.priceCardBlur}>
               <PriceCardContent
                 onStartTrial={handleStartTrial}
+                onSubscribe={handleSubscribe}
                 onRestore={handleRestore}
                 shimmerPosition={shimmerPosition}
                 monthlyPackage={monthlyPackage}
                 isPurchasing={isPurchasing}
+                hasClaimedTrial={hasClaimedTrial}
+                isInTrial={isInTrial}
+                trialDaysRemaining={trialDaysRemaining}
               />
             </BlurView>
           ) : (
             <View style={[styles.priceCardBlur, styles.priceCardAndroid]}>
               <PriceCardContent
                 onStartTrial={handleStartTrial}
+                onSubscribe={handleSubscribe}
                 onRestore={handleRestore}
                 shimmerPosition={shimmerPosition}
                 monthlyPackage={monthlyPackage}
                 isPurchasing={isPurchasing}
+                hasClaimedTrial={hasClaimedTrial}
+                isInTrial={isInTrial}
+                trialDaysRemaining={trialDaysRemaining}
               />
             </View>
           )}
@@ -440,26 +498,66 @@ export default function PaywallScreen() {
 // Price Card Inner Content
 function PriceCardContent({
   onStartTrial,
+  onSubscribe,
   onRestore,
   shimmerPosition,
   monthlyPackage,
   isPurchasing,
+  hasClaimedTrial,
+  isInTrial,
+  trialDaysRemaining,
 }: {
   onStartTrial: () => void;
+  onSubscribe: () => void;
   onRestore: () => void;
   shimmerPosition: Animated.Value;
   monthlyPackage: PurchasesPackage | null;
   isPurchasing: boolean;
+  hasClaimedTrial: boolean;
+  isInTrial: boolean;
+  trialDaysRemaining: number;
 }) {
   // Extract price from package or use fallback
-  const priceString = monthlyPackage?.product?.priceString || "$19.99";
-  // Parse price number from string (e.g., "$19.99" -> "19.99")
+  const priceString = monthlyPackage?.product?.priceString || "$29.99";
+  // Parse price number from string (e.g., "$29.99" -> "29.99")
   const priceNumber = priceString.replace(/[^0-9.]/g, "");
   const priceParts = priceNumber.split(".");
-  const priceWhole = priceParts[0] || "19";
+  const priceWhole = priceParts[0] || "29";
+
+  // Determine CTA text and action
+  const getCtaText = () => {
+    if (isInTrial) {
+      return `${trialDaysRemaining} Days Left — Subscribe Now`;
+    }
+    if (hasClaimedTrial) {
+      return `Subscribe — $${priceWhole}/mo`;
+    }
+    return "Start 5-Day Free Trial";
+  };
+
+  const handleCta = hasClaimedTrial ? onSubscribe : onStartTrial;
 
   return (
     <View style={styles.priceCardContent}>
+      {/* Trial Countdown Banner (when trial is active) */}
+      {isInTrial && (
+        <View style={styles.trialBanner}>
+          <Clock size={16} color={MIDNIGHT.gold} />
+          <Text style={styles.trialBannerText}>
+            Trial: {trialDaysRemaining} day{trialDaysRemaining !== 1 ? "s" : ""} left
+          </Text>
+        </View>
+      )}
+
+      {/* Trial Expired Banner */}
+      {hasClaimedTrial && !isInTrial && (
+        <View style={styles.trialExpiredBanner}>
+          <Text style={styles.trialExpiredText}>
+            Your free trial has ended. Subscribe to continue.
+          </Text>
+        </View>
+      )}
+
       {/* Pro Badge */}
       <View style={styles.proBadge}>
         <Shield size={14} color={MIDNIGHT.accent} strokeWidth={2} />
@@ -480,7 +578,7 @@ function PriceCardContent({
 
       {/* CTA Button with Shimmer */}
       <Pressable
-        onPress={onStartTrial}
+        onPress={handleCta}
         disabled={isPurchasing}
         style={({ pressed }) => [
           styles.ctaButton,
@@ -520,14 +618,34 @@ function PriceCardContent({
         {isPurchasing ? (
           <ActivityIndicator color="#000000" />
         ) : (
-          <Text style={styles.ctaButtonText}>Start 7-Day Free Trial</Text>
+          <Text style={styles.ctaButtonText}>{getCtaText()}</Text>
         )}
       </Pressable>
 
       {/* Terms */}
-      <Text style={styles.termsText}>
-        No charge until trial ends
-      </Text>
+      {!hasClaimedTrial && (
+        <Text style={styles.termsText}>
+          No charge for 5 days. Cancel anytime in Settings.
+        </Text>
+      )}
+      {hasClaimedTrial && !isInTrial && (
+        <Text style={styles.termsText}>
+          Billed monthly. Cancel anytime.
+        </Text>
+      )}
+
+      {/* Payment Methods Badge */}
+      <View style={styles.paymentMethodsRow}>
+        <View style={styles.paymentBadge}>
+          <Text style={styles.paymentBadgeText}>
+            {Platform.OS === "ios" ? "Apple Pay" : "Google Pay"}
+          </Text>
+        </View>
+        <View style={styles.paymentBadge}>
+          <CreditCard size={12} color={MIDNIGHT.textMuted} />
+          <Text style={styles.paymentBadgeText}>Card</Text>
+        </View>
+      </View>
 
       {/* Restore Purchases */}
       <Pressable onPress={onRestore} style={styles.restoreButton}>
@@ -714,6 +832,36 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
+  // Trial Banners
+  trialBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: MIDNIGHT.gold + "20",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  trialBannerText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: MIDNIGHT.gold,
+  },
+  trialExpiredBanner: {
+    backgroundColor: MIDNIGHT.textMuted + "20",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  trialExpiredText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: MIDNIGHT.textSecondary,
+    textAlign: "center",
+  },
+
   // Pro Badge
   proBadge: {
     flexDirection: "row",
@@ -811,6 +959,31 @@ const styles = StyleSheet.create({
     fontWeight: "400",
     color: MIDNIGHT.textMuted,
     marginTop: 12,
+  },
+
+  // Payment Methods
+  paymentMethodsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    marginTop: 16,
+  },
+  paymentBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: MIDNIGHT.glass,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: MIDNIGHT.glassBorder,
+  },
+  paymentBadgeText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: MIDNIGHT.textMuted,
   },
 
   // Restore Purchases

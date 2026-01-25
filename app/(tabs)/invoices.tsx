@@ -13,7 +13,21 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Plus, FileText, Mic, Edit3, Send, DollarSign, ArrowRight } from "lucide-react-native";
+import {
+  Plus,
+  FileText,
+  Mic,
+  Edit3,
+  Send,
+  DollarSign,
+  ArrowRight,
+  Sparkles,
+  Clock,
+  CheckCircle,
+  FileCheck,
+  Receipt,
+  Zap,
+} from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useInvoiceStore } from "@/store/useInvoiceStore";
@@ -26,20 +40,21 @@ import { startRecording, stopRecording } from "@/services/audio";
 import { processVoiceToInvoice } from "@/services/ai";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const HEADER_MAX_HEIGHT = 120;
-const HEADER_MIN_HEIGHT = 60;
-const HEADER_SCROLL_DISTANCE = HEADER_MAX_HEIGHT - HEADER_MIN_HEIGHT;
 
 type FilterType = "all" | "outstanding" | "paid";
 
 /**
- * Invoices Screen - The Workbench
- * Per Living Document Model
+ * Invoices Screen - The Living Document Workbench
  *
- * Features:
- * - Segmented Control: All | Outstanding | Paid
- * - Living Document lifecycle: Draft → Estimate → Invoice → Receipt
- * - Wallet Pass style cards
+ * State-Specific Experience:
+ * - New User: Onboarding with Living Document explanation
+ * - Has Estimates: Focus on getting deposits
+ * - Has Invoices: Focus on collecting balance
+ * - All Paid: Celebration + create new
+ *
+ * Two CTAs:
+ * - Create Estimate (blue) - For new jobs, requires deposit
+ * - Create Invoice (orange) - Direct invoice, no deposit
  */
 
 export default function InvoicesScreen() {
@@ -51,36 +66,14 @@ export default function InvoicesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
-  const [showOptionsModal, setShowOptionsModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createType, setCreateType] = useState<"estimate" | "invoice" | null>(null);
 
-  // Scroll animation for collapsing header
+  // Scroll animation
   const scrollY = useRef(new Animated.Value(0)).current;
-
-  // FAB pulsating animation
-  const fabPulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     fetchInvoices();
-  }, []);
-
-  // FAB pulsating animation
-  useEffect(() => {
-    const fabPulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(fabPulseAnim, {
-          toValue: 1.05,
-          duration: 1200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fabPulseAnim, {
-          toValue: 1,
-          duration: 1200,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    fabPulse.start();
-    return () => fabPulse.stop();
   }, []);
 
   // Recording timer
@@ -96,51 +89,59 @@ export default function InvoicesScreen() {
     return () => clearInterval(interval);
   }, [isRecording]);
 
-  // Voice recording handlers with safety timeout
+  // Voice recording handlers
   const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
-  const handleStartVoiceRecording = async () => {
+  const handleStartVoiceRecording = async (type: "estimate" | "invoice") => {
+    setCreateType(type);
+    setShowCreateModal(false);
     setIsRecording(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
     try {
       await startRecording();
-
-      // Safety timeout: auto-stop after 60 seconds
       recordingTimeoutRef.current = setTimeout(() => {
-        console.log("Recording auto-stopped after 60 seconds");
         handleStopVoiceRecording();
       }, 60000);
     } catch (error) {
       console.error("Failed to start recording:", error);
       setIsRecording(false);
-      Alert.alert("Recording Error", "Failed to start voice recording. Please try again.");
+      Alert.alert("Recording Error", "Failed to start voice recording.");
     }
   };
 
   const handleStopVoiceRecording = async () => {
-    // Clear timeout if it exists
     if (recordingTimeoutRef.current) {
       clearTimeout(recordingTimeoutRef.current);
     }
-
-    if (!isRecording) return; // Prevent double-stop
+    if (!isRecording) return;
 
     setIsRecording(false);
 
     try {
       const audioUri = await stopRecording();
-
       if (audioUri) {
         const result = await processVoiceToInvoice(audioUri);
-        setPendingInvoice(result.parsedInvoice);
+        // Set deposit_enabled based on type
+        const invoiceData = {
+          ...result.parsedInvoice,
+          deposit_enabled: createType === "estimate",
+        };
+        setPendingInvoice(invoiceData);
         router.push("/invoice/preview");
       }
     } catch (error) {
       console.error("Error processing voice:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert("Processing Error", "Failed to process voice recording. Please try again.");
+      Alert.alert("Processing Error", "Failed to process voice recording.");
     }
+  };
+
+  const handleManualCreate = (type: "estimate" | "invoice") => {
+    setShowCreateModal(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Pass type to create screen
+    router.push(`/invoice/create?type=${type}`);
   };
 
   const onRefresh = useCallback(async () => {
@@ -150,9 +151,7 @@ export default function InvoicesScreen() {
     setRefreshing(false);
   }, [fetchInvoices]);
 
-  // Filter invoices per Living Document: All | Outstanding | Paid
-  // Outstanding = anything not fully paid (drafts, estimates, invoices with deposit)
-  // Paid = receipts (fully paid)
+  // Filter invoices
   const filteredInvoices = invoices.filter((inv) => {
     switch (activeFilter) {
       case "outstanding":
@@ -164,49 +163,28 @@ export default function InvoicesScreen() {
     }
   });
 
-  // Sort logic varies by filter
+  // Sort: drafts first, then overdue, then by date
   const sortedInvoices = [...filteredInvoices].sort((a, b) => {
-    if (activeFilter === "outstanding") {
-      // For outstanding filter: drafts first, then overdue, then by due date
-      const now = new Date().getTime();
-      const aDueDate = a.due_date ? new Date(a.due_date).getTime() : now;
-      const bDueDate = b.due_date ? new Date(b.due_date).getTime() : now;
-
-      // Drafts first (need action)
-      if (a.status === "draft" && b.status !== "draft") return -1;
-      if (b.status === "draft" && a.status !== "draft") return 1;
-
-      // Then overdue (most urgent)
-      const aOverdueDays = a.status === "overdue" ? (now - aDueDate) : 0;
-      const bOverdueDays = b.status === "overdue" ? (now - bDueDate) : 0;
-
-      if (aOverdueDays > 0 && bOverdueDays > 0) {
-        return bOverdueDays - aOverdueDays; // Most overdue first
-      }
-      if (aOverdueDays > 0) return -1;
-      if (bOverdueDays > 0) return 1;
-
-      // Non-overdue: sort by due date (closest first)
-      if (a.due_date && b.due_date) {
-        return aDueDate - bDueDate;
-      }
-
-      // Fallback to created date (newest first)
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    }
-
-    // Default: sort by date (newest first)
+    if (a.status === "draft" && b.status !== "draft") return -1;
+    if (b.status === "draft" && a.status !== "draft") return 1;
+    if (a.status === "overdue" && b.status !== "overdue") return -1;
+    if (b.status === "overdue" && a.status !== "overdue") return 1;
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
 
-  // Counts for segmented control per Living Document model
+  // Counts
   const allCount = invoices.filter((i) => i.status !== "void").length;
   const outstandingCount = invoices.filter(
     (i) => i.status === "draft" || i.status === "sent" || i.status === "overdue" || i.status === "deposit_paid"
   ).length;
   const paidCount = invoices.filter((i) => i.status === "paid").length;
 
-  // Calculate total outstanding amount for stats
+  // State analysis for contextual UI
+  const estimates = invoices.filter((i) => i.status === "sent" && i.deposit_enabled && !i.deposit_paid_at);
+  const activeInvoices = invoices.filter((i) => i.status === "deposit_paid" || (i.status === "sent" && !i.deposit_enabled));
+  const overdueInvoices = invoices.filter((i) => i.status === "overdue");
+  const drafts = invoices.filter((i) => i.status === "draft");
+
   const outstandingAmount = invoices
     .filter((i) => i.status === "sent" || i.status === "overdue" || i.status === "deposit_paid")
     .reduce((sum, inv) => sum + (inv.total - (inv.amount_paid || 0)), 0);
@@ -220,49 +198,30 @@ export default function InvoicesScreen() {
       await updateInvoice(invoice.id, { status: "paid", paid_at: new Date().toISOString() });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error) {
-      console.error("Error marking invoice as paid:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   };
 
   const handleRemind = (invoice: Invoice) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Alert.alert(
-      "Send Reminder",
-      `Send a payment reminder to ${invoice.client_name}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Send",
-          onPress: () => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          },
-        },
-      ]
-    );
+    Alert.alert("Send Reminder", `Send a payment reminder to ${invoice.client_name}?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Send", onPress: () => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success) },
+    ]);
   };
 
   const handleVoid = (invoice: Invoice) => {
-    Alert.alert(
-      "Void Invoice",
-      `Are you sure you want to void this invoice? This action cannot be undone.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Void Invoice",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await updateInvoice(invoice.id, { status: "void" });
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            } catch (error) {
-              console.error("Error voiding invoice:", error);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-            }
-          },
+    Alert.alert("Void Invoice", "Are you sure? This cannot be undone.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Void",
+        style: "destructive",
+        onPress: async () => {
+          await updateInvoice(invoice.id, { status: "void" });
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const handleFilterChange = (filter: FilterType) => {
@@ -270,36 +229,13 @@ export default function InvoicesScreen() {
     setActiveFilter(filter);
   };
 
-  // Header animations
-  const headerHeight = scrollY.interpolate({
-    inputRange: [0, HEADER_SCROLL_DISTANCE],
-    outputRange: [HEADER_MAX_HEIGHT, HEADER_MIN_HEIGHT],
-    extrapolate: "clamp",
-  });
-
-  const titleScale = scrollY.interpolate({
-    inputRange: [0, HEADER_SCROLL_DISTANCE],
-    outputRange: [1, 0.7],
-    extrapolate: "clamp",
-  });
-
-  const titleTranslateY = scrollY.interpolate({
-    inputRange: [0, HEADER_SCROLL_DISTANCE],
-    outputRange: [0, -8],
-    extrapolate: "clamp",
-  });
-
-  const titleTranslateX = scrollY.interpolate({
-    inputRange: [0, HEADER_SCROLL_DISTANCE],
-    outputRange: [0, -24],
-    extrapolate: "clamp",
-  });
-
-  const subtitleOpacity = scrollY.interpolate({
-    inputRange: [0, HEADER_SCROLL_DISTANCE / 2],
-    outputRange: [1, 0],
-    extrapolate: "clamp",
-  });
+  const formatCurrency = (cents: number) => {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 0,
+    }).format(cents / 100);
+  };
 
   const renderInvoiceItem = ({ item }: { item: Invoice }) => (
     <InvoiceCard
@@ -311,128 +247,256 @@ export default function InvoicesScreen() {
     />
   );
 
-  // Format currency helper
-  const formatCurrency = (cents: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-    }).format(cents / 100);
+  // ═══════════════════════════════════════════════════════════════════════════
+  // EMPTY STATE - State-Specific Content
+  // ═══════════════════════════════════════════════════════════════════════════
+  const EmptyState = () => {
+    const isNewUser = allCount === 0;
+    const hasOnlyDrafts = drafts.length > 0 && estimates.length === 0 && activeInvoices.length === 0;
+    const hasEstimatesWaiting = estimates.length > 0;
+    const allPaidUp = allCount > 0 && outstandingCount === 0;
+
+    // New User - Full Onboarding
+    if (isNewUser) {
+      return (
+        <View style={styles.emptyState}>
+          {/* Living Document Journey */}
+          <View style={styles.journeyContainer}>
+            <View style={[styles.journeyStep, { backgroundColor: colors.systemBlue + "15" }]}>
+              <FileCheck size={28} color={colors.systemBlue} strokeWidth={1.5} />
+            </View>
+            <View style={styles.journeyArrow}>
+              <ArrowRight size={18} color={colors.textTertiary} />
+            </View>
+            <View style={[styles.journeyStep, { backgroundColor: colors.systemOrange + "15" }]}>
+              <FileText size={28} color={colors.systemOrange} strokeWidth={1.5} />
+            </View>
+            <View style={styles.journeyArrow}>
+              <ArrowRight size={18} color={colors.textTertiary} />
+            </View>
+            <View style={[styles.journeyStep, { backgroundColor: colors.statusPaid + "15" }]}>
+              <Receipt size={28} color={colors.statusPaid} strokeWidth={1.5} />
+            </View>
+          </View>
+
+          {/* Journey Labels */}
+          <View style={styles.journeyLabels}>
+            <Text style={[styles.journeyLabel, { color: colors.systemBlue }]}>Estimate</Text>
+            <Text style={[styles.journeyLabel, { color: colors.systemOrange }]}>Invoice</Text>
+            <Text style={[styles.journeyLabel, { color: colors.statusPaid }]}>Receipt</Text>
+          </View>
+
+          {/* Title */}
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>
+            One Document.{'\n'}Three Stages.
+          </Text>
+          <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+            Send an estimate, collect a deposit, then{'\n'}invoice for the balance. We track it all.
+          </Text>
+
+          {/* Dual CTAs */}
+          <View style={styles.dualCTAContainer}>
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setCreateType("estimate");
+                setShowCreateModal(true);
+              }}
+              style={({ pressed }) => [
+                styles.primaryCTA,
+                { backgroundColor: colors.systemBlue, opacity: pressed ? 0.9 : 1 },
+              ]}
+            >
+              <FileCheck size={20} color="#FFFFFF" strokeWidth={2} />
+              <Text style={styles.primaryCTAText}>Create Estimate</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setCreateType("invoice");
+                setShowCreateModal(true);
+              }}
+              style={({ pressed }) => [
+                styles.secondaryCTA,
+                {
+                  backgroundColor: colors.systemOrange + "15",
+                  borderColor: colors.systemOrange + "40",
+                  opacity: pressed ? 0.9 : 1,
+                },
+              ]}
+            >
+              <FileText size={20} color={colors.systemOrange} strokeWidth={2} />
+              <Text style={[styles.secondaryCTAText, { color: colors.systemOrange }]}>
+                Create Invoice
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* Quick Explainer */}
+          <View style={[styles.explainerCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.explainerRow}>
+              <View style={[styles.explainerIcon, { backgroundColor: colors.systemBlue + "15" }]}>
+                <FileCheck size={16} color={colors.systemBlue} />
+              </View>
+              <View style={styles.explainerContent}>
+                <Text style={[styles.explainerTitle, { color: colors.text }]}>Estimate</Text>
+                <Text style={[styles.explainerDesc, { color: colors.textTertiary }]}>
+                  Collect deposit upfront before starting
+                </Text>
+              </View>
+            </View>
+            <View style={styles.explainerRow}>
+              <View style={[styles.explainerIcon, { backgroundColor: colors.systemOrange + "15" }]}>
+                <FileText size={16} color={colors.systemOrange} />
+              </View>
+              <View style={styles.explainerContent}>
+                <Text style={[styles.explainerTitle, { color: colors.text }]}>Invoice</Text>
+                <Text style={[styles.explainerDesc, { color: colors.textTertiary }]}>
+                  Bill for full amount, no deposit required
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      );
+    }
+
+    // Has Estimates Waiting for Deposit
+    if (hasEstimatesWaiting && activeFilter === "outstanding") {
+      return (
+        <View style={styles.emptyState}>
+          <View style={[styles.statusIcon, { backgroundColor: colors.systemBlue + "15" }]}>
+            <Clock size={32} color={colors.systemBlue} />
+          </View>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>
+            {estimates.length} Estimate{estimates.length !== 1 ? 's' : ''} Waiting
+          </Text>
+          <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+            Your estimates are out there working.{'\n'}Enable Auto-Nudge to follow up automatically.
+          </Text>
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              setCreateType("estimate");
+              setShowCreateModal(true);
+            }}
+            style={({ pressed }) => [
+              styles.primaryCTA,
+              { backgroundColor: colors.systemBlue, opacity: pressed ? 0.9 : 1, marginTop: 24 },
+            ]}
+          >
+            <Plus size={20} color="#FFFFFF" strokeWidth={2.5} />
+            <Text style={styles.primaryCTAText}>Send Another Estimate</Text>
+          </Pressable>
+        </View>
+      );
+    }
+
+    // All Paid Up - Celebration
+    if (allPaidUp) {
+      return (
+        <View style={styles.emptyState}>
+          <View style={[styles.statusIcon, { backgroundColor: colors.statusPaid + "15" }]}>
+            <CheckCircle size={32} color={colors.statusPaid} />
+          </View>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>
+            All Caught Up!
+          </Text>
+          <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+            Every invoice is paid. Time to land{'\n'}the next job.
+          </Text>
+          <View style={styles.dualCTAContainer}>
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setCreateType("estimate");
+                setShowCreateModal(true);
+              }}
+              style={({ pressed }) => [
+                styles.primaryCTA,
+                { backgroundColor: colors.systemBlue, opacity: pressed ? 0.9 : 1 },
+              ]}
+            >
+              <FileCheck size={20} color="#FFFFFF" strokeWidth={2} />
+              <Text style={styles.primaryCTAText}>New Estimate</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setCreateType("invoice");
+                setShowCreateModal(true);
+              }}
+              style={({ pressed }) => [
+                styles.secondaryCTA,
+                {
+                  backgroundColor: colors.systemOrange + "15",
+                  borderColor: colors.systemOrange + "40",
+                  opacity: pressed ? 0.9 : 1,
+                },
+              ]}
+            >
+              <FileText size={20} color={colors.systemOrange} strokeWidth={2} />
+              <Text style={[styles.secondaryCTAText, { color: colors.systemOrange }]}>
+                New Invoice
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      );
+    }
+
+    // Default - No items in current filter
+    return (
+      <View style={styles.emptyState}>
+        <View style={[styles.statusIcon, { backgroundColor: colors.backgroundSecondary }]}>
+          <FileText size={32} color={colors.textTertiary} />
+        </View>
+        <Text style={[styles.emptyTitle, { color: colors.text }]}>
+          {activeFilter === "paid" ? "No Receipts Yet" : "Nothing Here"}
+        </Text>
+        <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+          {activeFilter === "paid"
+            ? "Paid invoices become receipts.\nThey'll appear here."
+            : "Create an estimate or invoice\nto get started."
+          }
+        </Text>
+      </View>
+    );
   };
 
-  // Empty State Component - Living Document Journey
-  const EmptyState = () => (
-    <View style={styles.emptyState}>
-      {/* Journey Visualization */}
-      <View style={styles.journeyContainer}>
-        <View style={[styles.journeyStep, { backgroundColor: colors.primary + "15" }]}>
-          <FileText size={24} color={colors.primary} strokeWidth={1.5} />
-        </View>
-        <ArrowRight size={20} color={colors.textTertiary} style={{ marginHorizontal: 8 }} />
-        <View style={[styles.journeyStep, { backgroundColor: colors.systemBlue + "15" }]}>
-          <Send size={24} color={colors.systemBlue} strokeWidth={1.5} />
-        </View>
-        <ArrowRight size={20} color={colors.textTertiary} style={{ marginHorizontal: 8 }} />
-        <View style={[styles.journeyStep, { backgroundColor: colors.statusPaid + "15" }]}>
-          <DollarSign size={24} color={colors.statusPaid} strokeWidth={1.5} />
-        </View>
-      </View>
-
-      {/* Title */}
-      <Text style={[styles.emptyTitle, { color: colors.text }]}>
-        Create. Send. Get Paid.
-      </Text>
-      <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
-        Your invoices live here. They transform from{'\n'}estimates to receipts as your clients pay.
-      </Text>
-
-      {/* Create Invoice CTA */}
-      <Pressable
-        onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          setShowOptionsModal(true);
-        }}
-        style={({ pressed }) => [
-          styles.createInvoiceCTA,
-          {
-            backgroundColor: colors.primary,
-            transform: [{ scale: pressed ? 0.98 : 1 }],
-          },
-        ]}
-      >
-        <Plus size={20} color="#FFFFFF" strokeWidth={2.5} />
-        <Text style={styles.createInvoiceCTAText}>
-          Create Invoice
-        </Text>
-      </Pressable>
-
-      {/* Voice hint */}
-      <View style={styles.voiceHintContainer}>
-        <Mic size={16} color={colors.textTertiary} />
-        <Text style={[styles.voiceHint, { color: colors.textTertiary }]}>
-          or tap{' '}
-          <Text style={{ color: colors.primary, fontWeight: "600" }}>+ </Text>
-          and speak it
-        </Text>
-      </View>
-
-      {/* Living Document Explainer */}
-      <View style={[styles.explainerCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <View style={styles.explainerRow}>
-          <View style={[styles.explainerBadge, { backgroundColor: colors.textTertiary + "20" }]}>
-            <Text style={[styles.explainerBadgeText, { color: colors.textSecondary }]}>DRAFT</Text>
-          </View>
-          <Text style={[styles.explainerText, { color: colors.textSecondary }]}>Not yet sent</Text>
-        </View>
-        <View style={styles.explainerRow}>
-          <View style={[styles.explainerBadge, { backgroundColor: colors.systemBlue + "20" }]}>
-            <Text style={[styles.explainerBadgeText, { color: colors.systemBlue }]}>ESTIMATE</Text>
-          </View>
-          <Text style={[styles.explainerText, { color: colors.textSecondary }]}>Awaiting payment</Text>
-        </View>
-        <View style={styles.explainerRow}>
-          <View style={[styles.explainerBadge, { backgroundColor: colors.alert + "20" }]}>
-            <Text style={[styles.explainerBadgeText, { color: colors.alert }]}>INVOICE</Text>
-          </View>
-          <Text style={[styles.explainerText, { color: colors.textSecondary }]}>Deposit paid, balance due</Text>
-        </View>
-        <View style={styles.explainerRow}>
-          <View style={[styles.explainerBadge, { backgroundColor: colors.statusPaid + "20" }]}>
-            <Text style={[styles.explainerBadgeText, { color: colors.statusPaid }]}>RECEIPT</Text>
-          </View>
-          <Text style={[styles.explainerText, { color: colors.textSecondary }]}>Fully paid</Text>
-        </View>
-      </View>
-    </View>
-  );
+  // Get contextual subtitle
+  const getSubtitle = () => {
+    if (overdueInvoices.length > 0) {
+      return `${overdueInvoices.length} overdue · ${formatCurrency(outstandingAmount)} outstanding`;
+    }
+    if (outstandingAmount > 0) {
+      return `${formatCurrency(outstandingAmount)} outstanding`;
+    }
+    if (allCount > 0) {
+      return `${paidCount} paid · ${allCount} total`;
+    }
+    return "Your living documents";
+  };
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top"]}>
-        {/* Header - matches Clients tab */}
+        {/* Header */}
         <View style={styles.header}>
-          <Text style={[styles.largeTitle, { color: colors.text }]}>
-            Invoices
-          </Text>
-          <Text style={[styles.subtitle, { color: colors.textTertiary }]}>
-            {outstandingAmount > 0
-              ? `${formatCurrency(outstandingAmount)} outstanding`
-              : allCount > 0
-                ? `${allCount} invoice${allCount !== 1 ? 's' : ''}`
-                : 'Create your first invoice'
-            }
+          <Text style={[styles.largeTitle, { color: colors.text }]}>Invoices</Text>
+          <Text style={[styles.subtitle, { color: overdueInvoices.length > 0 ? colors.statusOverdue : colors.textTertiary }]}>
+            {getSubtitle()}
           </Text>
         </View>
 
-        {/* ═══════════════════════════════════════════════════════════
-            SEGMENTED CONTROL - Living Document Filters
-        ═══════════════════════════════════════════════════════════ */}
+        {/* Segmented Control */}
         <View style={styles.segmentedControlContainer}>
           <View style={[styles.segmentedControl, { backgroundColor: colors.backgroundSecondary }]}>
             {(["all", "outstanding", "paid"] as FilterType[]).map((filter) => {
               const isActive = activeFilter === filter;
               const count = filter === "all" ? allCount : filter === "outstanding" ? outstandingCount : paidCount;
-              const label = filter === "outstanding" ? "Outstanding" : filter.charAt(0).toUpperCase() + filter.slice(1);
+              const label = filter.charAt(0).toUpperCase() + filter.slice(1);
 
               return (
                 <Pressable
@@ -443,16 +507,8 @@ export default function InvoicesScreen() {
                     isActive && [styles.segmentActive, { backgroundColor: colors.card }],
                   ]}
                 >
-                  <Text
-                    style={[
-                      styles.segmentText,
-                      { color: isActive ? colors.text : colors.textTertiary },
-                    ]}
-                  >
+                  <Text style={[styles.segmentText, { color: isActive ? colors.text : colors.textTertiary }]}>
                     {label}
-                    {count > 0 && (
-                      <Text style={{ color: colors.textTertiary }}> {count}</Text>
-                    )}
                   </Text>
                 </Pressable>
               );
@@ -460,9 +516,7 @@ export default function InvoicesScreen() {
           </View>
         </View>
 
-        {/* ═══════════════════════════════════════════════════════════
-            INVOICE LIST (with Skeleton Loading)
-        ═══════════════════════════════════════════════════════════ */}
+        {/* Invoice List */}
         {isLoading && invoices.length === 0 ? (
           <View style={styles.listContent}>
             <SkeletonCard count={4} />
@@ -480,144 +534,100 @@ export default function InvoicesScreen() {
             )}
             scrollEventThrottle={16}
             refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={colors.primary}
-              />
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
             }
             ListEmptyComponent={EmptyState}
           />
         )}
 
-        {/* Floating Action Button - matches Clients tab */}
-        <Animated.View style={{
-          position: "absolute",
-          top: 82,
-          right: 20,
-          transform: [{ scale: fabPulseAnim }],
-        }}>
-          <View style={{
-            width: 44,
-            height: 44,
-            borderRadius: 22,
-            backgroundColor: "#22C55E",
-            alignItems: "center",
-            justifyContent: "center",
-            shadowColor: "#22C55E",
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
-            shadowRadius: 8,
-            elevation: 8,
-          }}>
+        {/* Dual FABs - Only show when there are invoices */}
+        {allCount > 0 && (
+          <View style={styles.fabContainer}>
+            {/* Estimate FAB */}
             <Pressable
               onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
-                setShowOptionsModal(true);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setCreateType("estimate");
+                setShowCreateModal(true);
               }}
-              style={{
-                width: 44,
-                height: 44,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
+              style={[styles.fab, styles.fabSecondary, { backgroundColor: colors.systemBlue }]}
             >
-              <Plus size={22} color="#FFFFFF" strokeWidth={2.5} />
+              <FileCheck size={22} color="#FFFFFF" strokeWidth={2} />
+            </Pressable>
+
+            {/* Invoice FAB */}
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setCreateType("invoice");
+                setShowCreateModal(true);
+              }}
+              style={[styles.fab, styles.fabPrimary, { backgroundColor: colors.systemOrange }]}
+            >
+              <Plus size={24} color="#FFFFFF" strokeWidth={2.5} />
             </Pressable>
           </View>
-        </Animated.View>
+        )}
 
         {/* Recording Overlay */}
         <RecordingOverlay visible={isRecording} duration={recordingDuration} onStop={handleStopVoiceRecording} />
 
-        {/* Options Modal - Voice or Manual */}
+        {/* Create Modal - Voice or Manual */}
         <Modal
-          visible={showOptionsModal}
+          visible={showCreateModal}
           animationType="slide"
           transparent={true}
-          onRequestClose={() => setShowOptionsModal(false)}
+          onRequestClose={() => setShowCreateModal(false)}
         >
-          <Pressable
-            style={styles.optionsOverlay}
-            onPress={() => setShowOptionsModal(false)}
-          >
+          <Pressable style={styles.modalOverlay} onPress={() => setShowCreateModal(false)}>
             <View
-              style={[styles.optionsContainer, { backgroundColor: colors.card }]}
+              style={[styles.modalContainer, { backgroundColor: colors.card }]}
               onStartShouldSetResponder={() => true}
             >
-              {/* Handle bar */}
-              <View style={styles.handleBar} />
+              <View style={styles.modalHandle} />
 
-              <Text style={[styles.optionsTitle, { color: colors.text }]}>
-                New Invoice
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                {createType === "estimate" ? "New Estimate" : "New Invoice"}
+              </Text>
+              <Text style={[styles.modalSubtitle, { color: colors.textTertiary }]}>
+                {createType === "estimate"
+                  ? "Collect a deposit before you start the job"
+                  : "Bill for the full amount upfront"
+                }
               </Text>
 
+              {/* Voice Option */}
               <Pressable
-                onPress={() => {
-                  setShowOptionsModal(false);
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  handleStartVoiceRecording();
-                }}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  padding: 16,
-                  marginBottom: 12,
-                  borderRadius: 16,
-                  backgroundColor: colors.backgroundSecondary,
-                }}
+                onPress={() => handleStartVoiceRecording(createType || "estimate")}
+                style={[styles.modalOption, { backgroundColor: colors.backgroundSecondary }]}
               >
-                <View style={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: 16,
-                  backgroundColor: colors.primary + "20",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}>
-                  <Mic size={24} color={colors.primary} strokeWidth={2} />
+                <View style={[
+                  styles.modalOptionIcon,
+                  { backgroundColor: createType === "estimate" ? colors.systemBlue + "20" : colors.systemOrange + "20" }
+                ]}>
+                  <Mic size={24} color={createType === "estimate" ? colors.systemBlue : colors.systemOrange} />
                 </View>
-                <View style={{ flex: 1, marginLeft: 14 }}>
-                  <Text style={{ fontSize: 17, fontWeight: "600", color: colors.text }}>
-                    Voice
-                  </Text>
-                  <Text style={{ fontSize: 14, color: colors.textTertiary, marginTop: 2 }}>
+                <View style={styles.modalOptionContent}>
+                  <Text style={[styles.modalOptionTitle, { color: colors.text }]}>Voice</Text>
+                  <Text style={[styles.modalOptionDesc, { color: colors.textTertiary }]}>
                     Describe the job, we'll create it
                   </Text>
                 </View>
+                <Sparkles size={18} color={colors.textTertiary} />
               </Pressable>
 
+              {/* Manual Option */}
               <Pressable
-                onPress={() => {
-                  setShowOptionsModal(false);
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  router.push("/invoice/create");
-                }}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  padding: 16,
-                  marginBottom: 12,
-                  borderRadius: 16,
-                  backgroundColor: colors.backgroundSecondary,
-                }}
+                onPress={() => handleManualCreate(createType || "estimate")}
+                style={[styles.modalOption, { backgroundColor: colors.backgroundSecondary }]}
               >
-                <View style={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: 16,
-                  backgroundColor: colors.systemBlue + "20",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}>
-                  <Edit3 size={24} color={colors.systemBlue} strokeWidth={2} />
+                <View style={[styles.modalOptionIcon, { backgroundColor: colors.textTertiary + "15" }]}>
+                  <Edit3 size={24} color={colors.textSecondary} />
                 </View>
-                <View style={{ flex: 1, marginLeft: 14 }}>
-                  <Text style={{ fontSize: 17, fontWeight: "600", color: colors.text }}>
-                    Manual
-                  </Text>
-                  <Text style={{ fontSize: 14, color: colors.textTertiary, marginTop: 2 }}>
-                    Enter invoice details yourself
+                <View style={styles.modalOptionContent}>
+                  <Text style={[styles.modalOptionTitle, { color: colors.text }]}>Manual</Text>
+                  <Text style={[styles.modalOptionDesc, { color: colors.textTertiary }]}>
+                    Enter details yourself
                   </Text>
                 </View>
               </Pressable>
@@ -625,13 +635,11 @@ export default function InvoicesScreen() {
               <Pressable
                 onPress={() => {
                   Haptics.selectionAsync();
-                  setShowOptionsModal(false);
+                  setShowCreateModal(false);
                 }}
                 style={[styles.cancelButton, { backgroundColor: colors.background }]}
               >
-                <Text style={[styles.cancelButtonText, { color: colors.primary }]}>
-                  Cancel
-                </Text>
+                <Text style={[styles.cancelButtonText, { color: colors.primary }]}>Cancel</Text>
               </Pressable>
             </View>
           </Pressable>
@@ -646,7 +654,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // Header - matches Clients tab exactly
+  // Header
   header: {
     paddingHorizontal: 20,
     paddingTop: 16,
@@ -698,132 +706,226 @@ const styles = StyleSheet.create({
   // List
   listContent: {
     padding: 16,
-    paddingBottom: 120,
+    paddingBottom: 140,
   },
 
-  // Empty State - Living Document Journey
+  // Empty State
   emptyState: {
     flex: 1,
     alignItems: "center",
-    paddingVertical: 48,
+    paddingVertical: 40,
     paddingHorizontal: 24,
   },
   journeyContainer: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 32,
+    marginBottom: 12,
   },
   journeyStep: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
+    width: 64,
+    height: 64,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
   },
+  journeyArrow: {
+    paddingHorizontal: 12,
+  },
+  journeyLabels: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 44,
+    marginBottom: 32,
+  },
+  journeyLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  statusIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
+  },
   emptyTitle: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: "800",
-    letterSpacing: -0.5,
-    marginBottom: 12,
+    letterSpacing: -0.6,
     textAlign: "center",
+    marginBottom: 12,
   },
   emptySubtitle: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "500",
     textAlign: "center",
-    marginBottom: 32,
-    lineHeight: 22,
+    lineHeight: 24,
   },
-  createInvoiceCTA: {
+
+  // Dual CTAs
+  dualCTAContainer: {
+    width: "100%",
+    marginTop: 32,
+    gap: 12,
+  },
+  primaryCTA: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 16,
-    paddingHorizontal: 32,
+    paddingHorizontal: 24,
     borderRadius: 14,
-    gap: 8,
-    shadowColor: "#22C55E",
+    gap: 10,
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.15,
     shadowRadius: 8,
-    elevation: 5,
+    elevation: 4,
   },
-  createInvoiceCTAText: {
+  primaryCTAText: {
     color: "#FFFFFF",
     fontSize: 17,
     fontWeight: "600",
+    letterSpacing: -0.3,
   },
-  voiceHintContainer: {
+  secondaryCTA: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 16,
-    gap: 6,
+    justifyContent: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    gap: 10,
   },
-  voiceHint: {
-    fontSize: 14,
-    fontWeight: "500",
+  secondaryCTAText: {
+    fontSize: 17,
+    fontWeight: "600",
+    letterSpacing: -0.3,
   },
+
+  // Explainer Card
   explainerCard: {
     width: "100%",
     marginTop: 40,
     padding: 16,
     borderRadius: 16,
     borderWidth: 1,
-    gap: 12,
+    gap: 16,
   },
   explainerRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 14,
   },
-  explainerBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-    minWidth: 80,
+  explainerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     alignItems: "center",
+    justifyContent: "center",
   },
-  explainerBadgeText: {
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 0.5,
+  explainerContent: {
+    flex: 1,
   },
-  explainerText: {
-    fontSize: 14,
+  explainerTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  explainerDesc: {
+    fontSize: 13,
     fontWeight: "500",
   },
 
-  // Options Modal - matches Clients tab
-  optionsOverlay: {
+  // FABs
+  fabContainer: {
+    position: "absolute",
+    bottom: 100,
+    right: 20,
+    gap: 12,
+  },
+  fab: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  fabPrimary: {},
+  fabSecondary: {},
+
+  // Modal
+  modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "flex-end",
   },
-  optionsContainer: {
+  modalContainer: {
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingTop: 12,
     paddingBottom: 40,
     paddingHorizontal: 20,
   },
-  handleBar: {
+  modalHandle: {
     width: 36,
     height: 5,
-    backgroundColor: "rgba(0, 0, 0, 0.15)",
+    backgroundColor: "rgba(128, 128, 128, 0.3)",
     borderRadius: 3,
     alignSelf: "center",
     marginBottom: 20,
   },
-  optionsTitle: {
-    fontSize: 20,
+  modalTitle: {
+    fontSize: 24,
     fontWeight: "700",
-    letterSpacing: -0.4,
+    letterSpacing: -0.5,
     textAlign: "center",
-    marginBottom: 20,
+    marginBottom: 6,
+  },
+  modalSubtitle: {
+    fontSize: 15,
+    fontWeight: "500",
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  modalOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    marginBottom: 12,
+    borderRadius: 16,
+  },
+  modalOptionIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalOptionContent: {
+    flex: 1,
+    marginLeft: 14,
+  },
+  modalOptionTitle: {
+    fontSize: 17,
+    fontWeight: "600",
+  },
+  modalOptionDesc: {
+    fontSize: 14,
+    marginTop: 2,
   },
   cancelButton: {
-    marginTop: 10,
+    marginTop: 8,
     paddingVertical: 16,
     borderRadius: 14,
     alignItems: "center",

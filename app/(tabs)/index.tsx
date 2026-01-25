@@ -77,7 +77,8 @@ export default function HomeScreen() {
   const { stats, fetchDashboardStats } = useDashboardStore();
   const { profile, fetchProfile, updateProfile } = useProfileStore();
   const { invoices, fetchInvoices, setPendingInvoice, createInvoice } = useInvoiceStore();
-  const { isPro } = useSubscriptionStore();
+  const { isPro, isInTrial, getTrialDaysRemaining } = useSubscriptionStore();
+  const trialDaysRemaining = getTrialDaysRemaining();
   const { setupTasks, isSetupComplete } = useOnboardingStore();
 
   const [isRecording, setIsRecording] = useState(false);
@@ -344,6 +345,25 @@ export default function HomeScreen() {
             Business health overview
           </Text>
         </Animated.View>
+
+        {/* ═══════════════════════════════════════════════════════════
+            TRIAL WARNING - Show when 2 days or less remaining
+        ═══════════════════════════════════════════════════════════ */}
+        {isInTrial && trialDaysRemaining <= 2 && (
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              router.push("/paywall?trigger=default");
+            }}
+            style={[styles.trialWarningBanner, { backgroundColor: isDark ? "#3D2700" : "#FFF3E0" }]}
+          >
+            <AlertCircle size={18} color={colors.systemOrange} />
+            <Text style={[styles.trialWarningText, { color: colors.systemOrange }]}>
+              Your trial ends in {trialDaysRemaining} day{trialDaysRemaining !== 1 ? "s" : ""}. Subscribe to keep PRO features.
+            </Text>
+            <ChevronRight size={16} color={colors.systemOrange} />
+          </Pressable>
+        )}
 
         {/* ═══════════════════════════════════════════════════════════
             FIRST RUN - Trade Selection
@@ -700,6 +720,22 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "500",
     marginTop: 4,
+    letterSpacing: -0.2,
+  },
+
+  // Trial Warning Banner
+  trialWarningBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    borderRadius: 14,
+    marginBottom: 16,
+    gap: 10,
+  },
+  trialWarningText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "600",
     letterSpacing: -0.2,
   },
 

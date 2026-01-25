@@ -41,6 +41,10 @@ export interface Database {
           subscription_tier: SubscriptionTier;
           stripe_customer_id: string | null;
           current_period_end: string | null;
+          // Trial fields
+          has_claimed_trial: boolean;
+          trial_started_at: string | null;
+          trial_ends_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -64,6 +68,10 @@ export interface Database {
           subscription_tier?: SubscriptionTier;
           stripe_customer_id?: string | null;
           current_period_end?: string | null;
+          // Trial fields
+          has_claimed_trial?: boolean;
+          trial_started_at?: string | null;
+          trial_ends_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -87,6 +95,10 @@ export interface Database {
           subscription_tier?: SubscriptionTier;
           stripe_customer_id?: string | null;
           current_period_end?: string | null;
+          // Trial fields
+          has_claimed_trial?: boolean;
+          trial_started_at?: string | null;
+          trial_ends_at?: string | null;
           updated_at?: string;
         };
       };
@@ -160,6 +172,7 @@ export interface Database {
           deposit_paid_at: string | null;
           // Per-invoice settings
           auto_chase_enabled: boolean;
+          auto_nudge_enabled: boolean;
           late_fee_enabled: boolean;
           late_fee_type: LateFeeType | null;
           late_fee_value: number | null;
@@ -204,6 +217,7 @@ export interface Database {
           deposit_paid_at?: string | null;
           // Per-invoice settings
           auto_chase_enabled?: boolean;
+          auto_nudge_enabled?: boolean;
           late_fee_enabled?: boolean;
           late_fee_type?: LateFeeType | null;
           late_fee_value?: number | null;
@@ -248,6 +262,7 @@ export interface Database {
           deposit_paid_at?: string | null;
           // Per-invoice settings
           auto_chase_enabled?: boolean;
+          auto_nudge_enabled?: boolean;
           late_fee_enabled?: boolean;
           late_fee_type?: LateFeeType | null;
           late_fee_value?: number | null;
@@ -427,6 +442,35 @@ export interface Database {
           error_message?: string | null;
         };
       };
+      nudge_events: {
+        Row: {
+          id: string;
+          invoice_id: string;
+          user_id: string;
+          attempt_number: number;
+          channel: 'sms' | 'email';
+          sent_at: string;
+          metadata: Json;
+        };
+        Insert: {
+          id?: string;
+          invoice_id: string;
+          user_id: string;
+          attempt_number: number;
+          channel?: 'sms' | 'email';
+          sent_at?: string;
+          metadata?: Json;
+        };
+        Update: {
+          id?: string;
+          invoice_id?: string;
+          user_id?: string;
+          attempt_number?: number;
+          channel?: 'sms' | 'email';
+          sent_at?: string;
+          metadata?: Json;
+        };
+      };
     };
     Enums: {
       invoice_status: InvoiceStatus;
@@ -462,3 +506,6 @@ export type ReminderSettingsInsert = Database['public']['Tables']['reminder_sett
 export type ReminderSettingsUpdate = Database['public']['Tables']['reminder_settings']['Update'];
 
 export type ReminderLog = Database['public']['Tables']['reminder_logs']['Row'];
+
+export type NudgeEvent = Database['public']['Tables']['nudge_events']['Row'];
+export type NudgeEventInsert = Database['public']['Tables']['nudge_events']['Insert'];

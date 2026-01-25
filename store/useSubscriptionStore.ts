@@ -6,6 +6,7 @@
 import { create } from "zustand";
 import { CustomerInfo, PurchasesOffering, PurchasesPackage } from "react-native-purchases";
 import * as purchases from "@/services/purchases";
+import { supabase } from "@/lib/supabase";
 
 // Free tier limits - Tightened to drive conversion
 // At 3 invoices/month, contractors hit the wall in week 1 and feel the pain
@@ -24,6 +25,11 @@ interface SubscriptionState {
   sendsThisMonth: number;
   sendLimitReached: boolean;
 
+  // Trial state
+  hasClaimedTrial: boolean;
+  trialEndsAt: Date | null;
+  isInTrial: boolean;
+
   // Actions
   initialize: (userId?: string) => Promise<void>;
   loginUser: (userId: string) => Promise<void>;
@@ -40,10 +46,17 @@ interface SubscriptionState {
 
   // Feature Gating Checks
   canUseBadCopAutopilot: () => boolean;
+  canUseAutoNudge: () => boolean;
   canUseReadReceipts: () => boolean;
   canUseCustomBranding: () => boolean;
   canUseInstantPayouts: () => boolean;
   canExport: () => boolean;
+
+  // Trial Actions
+  checkTrialEligibility: () => Promise<boolean>;
+  startTrial: () => Promise<void>;
+  getTrialDaysRemaining: () => number;
+  loadTrialStatus: () => Promise<void>;
 
   // Reset
   reset: () => void;
@@ -58,6 +71,9 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
   error: null,
   sendsThisMonth: 0,
   sendLimitReached: false,
+  hasClaimedTrial: false,
+  trialEndsAt: null,
+  isInTrial: false,
 
   initialize: async (userId?: string) => {
     try {
@@ -71,13 +87,23 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
       // Fetch offerings
       const offerings = await purchases.getOfferings();
 
+      // Detect trial status from RevenueCat
+      const proEntitlement = customerInfo.entitlements.active[purchases.PRO_ENTITLEMENT_ID];
+      const isInTrial = proEntitlement?.periodType === "TRIAL";
+      const trialEndsAt = proEntitlement?.expirationDate ? new Date(proEntitlement.expirationDate) : null;
+
       set({
         isInitialized: true,
         isLoading: false,
         customerInfo,
         isPro,
         offerings,
+        isInTrial,
+        trialEndsAt,
       });
+
+      // Load trial claim status from Supabase
+      get().loadTrialStatus();
 
       // Add listener for updates
       purchases.addCustomerInfoUpdateListener((info) => {
@@ -194,10 +220,93 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
 
   // Feature Gating Checks (Pro-only features)
   canUseBadCopAutopilot: () => get().isPro,
+  canUseAutoNudge: () => get().isPro,
   canUseReadReceipts: () => get().isPro,
   canUseCustomBranding: () => get().isPro,
   canUseInstantPayouts: () => get().isPro,
   canExport: () => get().isPro,
+
+  // Trial Actions
+  loadTrialStatus: async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("has_claimed_trial, trial_started_at, trial_ends_at")
+        .eq("id", user.id)
+        .single();
+
+      if (profile) {
+        set({
+          hasClaimedTrial: profile.has_claimed_trial || false,
+          trialEndsAt: profile.trial_ends_at ? new Date(profile.trial_ends_at) : null,
+        });
+      }
+    } catch (error) {
+      console.error("[SubscriptionStore] Failed to load trial status:", error);
+    }
+  },
+
+  checkTrialEligibility: async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return false;
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("has_claimed_trial")
+        .eq("id", user.id)
+        .single();
+
+      return !profile?.has_claimed_trial;
+    } catch (error) {
+      console.error("[SubscriptionStore] Failed to check trial eligibility:", error);
+      return false;
+    }
+  },
+
+  startTrial: async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+
+      const now = new Date();
+      const trialEndsAt = new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000); // 5 days
+
+      // Mark trial as claimed in Supabase
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          has_claimed_trial: true,
+          trial_started_at: now.toISOString(),
+          trial_ends_at: trialEndsAt.toISOString(),
+          updated_at: now.toISOString(),
+        })
+        .eq("id", user.id);
+
+      if (error) throw error;
+
+      set({
+        hasClaimedTrial: true,
+        trialEndsAt,
+        isInTrial: true,
+      });
+
+      console.log("[SubscriptionStore] Trial started, ends at:", trialEndsAt);
+    } catch (error) {
+      console.error("[SubscriptionStore] Failed to start trial:", error);
+      throw error;
+    }
+  },
+
+  getTrialDaysRemaining: () => {
+    const { trialEndsAt, isInTrial } = get();
+    if (!isInTrial || !trialEndsAt) return 0;
+    const diff = trialEndsAt.getTime() - Date.now();
+    return Math.max(0, Math.ceil(diff / (24 * 60 * 60 * 1000)));
+  },
 
   reset: () =>
     set({
@@ -209,6 +318,9 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
       error: null,
       sendsThisMonth: 0,
       sendLimitReached: false,
+      hasClaimedTrial: false,
+      trialEndsAt: null,
+      isInTrial: false,
     }),
 }));
 
@@ -218,14 +330,16 @@ export const FREE_SENDS_PER_MONTH = FREE_MONTHLY_SEND_LIMIT;
 /**
  * Hook for checking feature availability with contextual paywall trigger
  */
-export function useFeatureGate(feature: "badCop" | "readReceipts" | "branding" | "payouts") {
-  const { isPro, canUseBadCopAutopilot, canUseReadReceipts, canUseCustomBranding, canUseInstantPayouts } =
+export function useFeatureGate(feature: "badCop" | "autoNudge" | "readReceipts" | "branding" | "payouts") {
+  const { isPro, canUseBadCopAutopilot, canUseAutoNudge, canUseReadReceipts, canUseCustomBranding, canUseInstantPayouts } =
     useSubscriptionStore();
 
   const checkFeature = () => {
     switch (feature) {
       case "badCop":
         return canUseBadCopAutopilot();
+      case "autoNudge":
+        return canUseAutoNudge();
       case "readReceipts":
         return canUseReadReceipts();
       case "branding":
