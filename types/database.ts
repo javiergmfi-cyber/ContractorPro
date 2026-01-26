@@ -179,6 +179,11 @@ export interface Database {
           // Living Document fields (per HYBRID_SPEC)
           published_at: string | null; // When contractor "sent" the estimate/invoice
           signature_url: string | null; // Client signature for deposit approval
+          // Change order approval fields
+          change_order_pending: boolean;
+          change_order_description: string | null;
+          change_order_amount: number | null; // delta in cents
+          change_order_previous_total: number | null; // original total in cents
           created_at: string;
           updated_at: string;
         };
@@ -224,6 +229,11 @@ export interface Database {
           // Living Document fields (per HYBRID_SPEC)
           published_at?: string | null;
           signature_url?: string | null;
+          // Change order approval fields
+          change_order_pending?: boolean;
+          change_order_description?: string | null;
+          change_order_amount?: number | null;
+          change_order_previous_total?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -269,6 +279,11 @@ export interface Database {
           // Living Document fields (per HYBRID_SPEC)
           published_at?: string | null;
           signature_url?: string | null;
+          // Change order approval fields
+          change_order_pending?: boolean;
+          change_order_description?: string | null;
+          change_order_amount?: number | null;
+          change_order_previous_total?: number | null;
           updated_at?: string;
         };
       };

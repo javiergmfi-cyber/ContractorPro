@@ -669,6 +669,26 @@ export default function InvoiceDetail() {
             </Animated.Text>
           )}
 
+          {/* Change order awaiting approval indicator */}
+          {invoice.change_order_pending && (
+            <View
+              style={[
+                styles.approvedIndicator,
+                { backgroundColor: colors.systemOrange + "15", marginTop: spacing.xs },
+              ]}
+            >
+              <Clock size={12} color={colors.systemOrange} />
+              <Text
+                style={[
+                  typography.caption1,
+                  { color: colors.systemOrange, fontWeight: "600", marginLeft: 4 },
+                ]}
+              >
+                Change order sent — awaiting approval
+              </Text>
+            </View>
+          )}
+
           {/* Approved but deposit not paid indicator */}
           {invoice.approved_at && !invoice.deposit_paid_at && invoice.deposit_enabled && (
             <View

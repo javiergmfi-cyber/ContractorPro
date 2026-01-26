@@ -59,6 +59,11 @@ interface Invoice {
   deposit_paid_at: string | null;
   tracking_id: string;
   stripe_hosted_invoice_url: string | null;
+  // Change order approval fields
+  change_order_pending: boolean;
+  change_order_description: string | null;
+  change_order_amount: number | null;
+  change_order_previous_total: number | null;
 }
 
 interface Profile {
@@ -147,6 +152,12 @@ function renderPaymentPage(
   const showAch = paymentAmount >= ACH_THRESHOLD;
   const achTotal = paymentAmount + ACH_FLAT_FEE;
 
+  // Change order state
+  const hasChangeOrder = invoice.change_order_pending === true;
+  const changeOrderDescription = invoice.change_order_description || "Updated scope";
+  const changeOrderAmount = invoice.change_order_amount || 0;
+  const changeOrderPreviousTotal = invoice.change_order_previous_total || 0;
+
   // Determine what to show based on state
   let heroTitle = "";
   let heroSubtitle = "";
@@ -154,6 +165,7 @@ function renderPaymentPage(
   let achButton = "";
   let statusBadge = "";
   let feeDisclosure = "";
+  let changeOrderCard = "";
 
   switch (state) {
     case "fully_paid":
@@ -172,7 +184,26 @@ function renderPaymentPage(
         ? `Balance due to ${businessName}`
         : `Invoice from ${businessName}`;
 
-      if (state === "deposit_pending") {
+      if (hasChangeOrder) {
+        // Override status badge with amber "Invoice Updated" badge
+        statusBadge = `<div class="status-badge change-order">Invoice Updated</div>`;
+
+        // Change order callout card
+        changeOrderCard = `
+          <div class="change-order-card">
+            <div class="change-order-header">CHANGE ORDER</div>
+            <div class="change-order-description">${changeOrderDescription}</div>
+            <div class="change-order-row">
+              <span></span>
+              <span class="change-order-delta">+${formatCurrency(changeOrderAmount, invoice.currency)}</span>
+            </div>
+            <div class="change-order-row previous">
+              <span>Previous Total</span>
+              <span>${formatCurrency(changeOrderPreviousTotal, invoice.currency)}</span>
+            </div>
+          </div>
+        `;
+      } else if (state === "deposit_pending") {
         statusBadge = `<div class="status-badge pending">Awaiting Approval</div>`;
       } else if (state === "deposit_paid") {
         statusBadge = `
@@ -199,28 +230,70 @@ function renderPaymentPage(
         `;
       }
 
-      // Primary Card Button (Big, Hero)
-      const actionValue = state === "deposit_pending" ? "pay_deposit"
-        : state === "deposit_paid" ? "pay_balance" : "pay_full";
+      if (hasChangeOrder) {
+        // Change order approval buttons (mirror estimate pattern)
+        primaryButton = `
+          <form method="POST" action="${baseUrl}">
+            <input type="hidden" name="id" value="${invoice.tracking_id}">
+            <input type="hidden" name="action" value="approve_change_order">
+            <input type="hidden" name="method" value="card">
+            <button type="submit" class="btn btn-primary btn-card">
+              <span class="btn-icon">💳</span>
+              <span class="btn-content">
+                <span class="btn-label">Approve &amp; Pay ${formatCurrency(cardTotal, invoice.currency)}</span>
+                <span class="btn-sublabel">Instant · Earn Points</span>
+              </span>
+            </button>
+          </form>
+          ${feeDisclosure}
+          <form method="POST" action="${baseUrl}" class="secondary-form">
+            <input type="hidden" name="id" value="${invoice.tracking_id}">
+            <input type="hidden" name="action" value="approve_change_only">
+            <button type="submit" class="btn btn-secondary">
+              Approve Changes (Pay Later)
+            </button>
+          </form>
+        `;
+      } else {
+        // Normal payment buttons
+        const actionValue = state === "deposit_pending" ? "pay_deposit"
+          : state === "deposit_paid" ? "pay_balance" : "pay_full";
 
-      primaryButton = `
-        <form method="POST" action="${baseUrl}">
-          <input type="hidden" name="id" value="${invoice.tracking_id}">
-          <input type="hidden" name="action" value="${actionValue}">
-          <input type="hidden" name="method" value="card">
-          <button type="submit" class="btn btn-primary btn-card">
-            <span class="btn-icon">💳</span>
-            <span class="btn-content">
-              <span class="btn-label">Pay with Card</span>
-              <span class="btn-sublabel">Instant • Earn Points • ${formatCurrency(cardTotal, invoice.currency)}</span>
-            </span>
-          </button>
-        </form>
-        ${feeDisclosure}
-      `;
+        primaryButton = `
+          <form method="POST" action="${baseUrl}">
+            <input type="hidden" name="id" value="${invoice.tracking_id}">
+            <input type="hidden" name="action" value="${actionValue}">
+            <input type="hidden" name="method" value="card">
+            <button type="submit" class="btn btn-primary btn-card">
+              <span class="btn-icon">💳</span>
+              <span class="btn-content">
+                <span class="btn-label">Pay with Card</span>
+                <span class="btn-sublabel">Instant · Earn Points · ${formatCurrency(cardTotal, invoice.currency)}</span>
+              </span>
+            </button>
+          </form>
+          ${feeDisclosure}
+        `;
 
-      // ACH Button (Small, Hidden for < $2,500)
-      if (showAch) {
+        // Secondary "Approve Only" for deposits
+        if (state === "deposit_pending") {
+          primaryButton += `
+            <form method="POST" action="${baseUrl}" class="secondary-form">
+              <input type="hidden" name="id" value="${invoice.tracking_id}">
+              <input type="hidden" name="action" value="approve_only">
+              <button type="submit" class="btn btn-secondary">
+                Approve Only (Pay Later)
+              </button>
+            </form>
+          `;
+        }
+      }
+
+      // ACH Button (Small, Hidden for < $2,500) — not shown during change order approval
+      if (showAch && !hasChangeOrder) {
+        const actionValue = state === "deposit_pending" ? "pay_deposit"
+          : state === "deposit_paid" ? "pay_balance" : "pay_full";
+
         achButton = `
           <div class="ach-section">
             <button type="button" class="btn-ach-link" onclick="showAchWarning()">
@@ -264,18 +337,6 @@ function renderPaymentPage(
         `;
       }
 
-      // Secondary "Approve Only" for deposits
-      if (state === "deposit_pending") {
-        primaryButton += `
-          <form method="POST" action="${baseUrl}" class="secondary-form">
-            <input type="hidden" name="id" value="${invoice.tracking_id}">
-            <input type="hidden" name="action" value="approve_only">
-            <button type="submit" class="btn btn-secondary">
-              Approve Only (Pay Later)
-            </button>
-          </form>
-        `;
-      }
       break;
     }
   }
@@ -680,6 +741,56 @@ function renderPaymentPage(
       color: rgba(255,255,255,0.4);
     }
 
+    /* Change Order Card */
+    .status-badge.change-order {
+      background: rgba(255, 159, 10, 0.2);
+      color: #FF9F0A;
+    }
+
+    .change-order-card {
+      background: rgba(255, 159, 10, 0.08);
+      border: 1px solid rgba(255, 159, 10, 0.25);
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    .change-order-header {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      color: #FF9F0A;
+      margin-bottom: 8px;
+    }
+
+    .change-order-description {
+      font-size: 15px;
+      font-weight: 500;
+      color: rgba(255,255,255,0.9);
+      margin-bottom: 12px;
+    }
+
+    .change-order-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 0;
+      font-size: 14px;
+      color: rgba(255,255,255,0.6);
+    }
+
+    .change-order-delta {
+      font-weight: 700;
+      color: #FF9F0A;
+      font-size: 16px;
+    }
+
+    .change-order-row.previous {
+      padding-top: 8px;
+      margin-top: 4px;
+      border-top: 1px solid rgba(255,255,255,0.1);
+    }
+
     @media (max-width: 480px) {
       body {
         padding: 16px;
@@ -757,6 +868,8 @@ function renderPaymentPage(
       <div class="hero-subtitle">${heroSubtitle}</div>
       ${statusBadge}
     </div>
+
+    ${changeOrderCard}
 
     <div class="card">
       <div class="client-info" style="margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.1);">
@@ -845,7 +958,9 @@ Deno.serve(async (req) => {
         total, currency, status,
         deposit_enabled, deposit_amount, amount_paid,
         approved_at, deposit_paid_at, tracking_id,
-        stripe_hosted_invoice_url
+        stripe_hosted_invoice_url,
+        change_order_pending, change_order_description,
+        change_order_amount, change_order_previous_total
       `)
       .or(`tracking_id.eq.${trackingId},id.eq.${trackingId}`)
       .single();
@@ -946,6 +1061,160 @@ Deno.serve(async (req) => {
       }
 
       switch (action) {
+        case "approve_change_order": {
+          // Approve change order + pay: clear pending flag, then redirect to Stripe
+          await supabase
+            .from("invoices")
+            .update({ change_order_pending: false })
+            .eq("id", invoice.id);
+
+          // Log activity
+          await supabase.from("activity_events").insert({
+            user_id: invoice.user_id,
+            type: "change_order_approved",
+            invoice_id: invoice.id,
+            client_name: invoice.client_name,
+            amount: invoice.total,
+            metadata: { with_payment: true },
+          });
+
+          // Determine what payment amount to charge based on deposit state
+          const coState = getPaymentState(invoice as Invoice);
+          let coBaseAmount: number;
+          let coPaymentType: string;
+          let coDescription: string;
+
+          if (coState === "deposit_paid") {
+            coBaseAmount = getRemainingBalance(invoice as Invoice);
+            coPaymentType = "balance";
+            coDescription = `Balance for Invoice ${invoice.invoice_number}`;
+          } else if (coState === "deposit_pending") {
+            coBaseAmount = invoice.deposit_amount || invoice.total;
+            coPaymentType = "deposit";
+            coDescription = `Deposit for Invoice ${invoice.invoice_number}`;
+          } else {
+            coBaseAmount = invoice.total;
+            coPaymentType = "full";
+            coDescription = `Invoice ${invoice.invoice_number}`;
+          }
+
+          const coCardSurcharge = calculateCardSurcharge(coBaseAmount);
+          const coChargeAmount = isPro ? coBaseAmount + coCardSurcharge : coBaseAmount;
+          const coApplicationFee = isPro ? coCardSurcharge : Math.round(coBaseAmount * 0.005);
+
+          if (coChargeAmount <= 0) {
+            const { data: latestInvoice } = await supabase
+              .from("invoices")
+              .select("*")
+              .eq("id", invoice.id)
+              .single();
+
+            return new Response(
+              renderPaymentPage(
+                (latestInvoice || invoice) as Invoice,
+                profileWithPro,
+                baseUrl,
+                "This invoice has already been paid in full. Thank you!"
+              ),
+              { headers: { ...corsHeaders, "Content-Type": "text/html" } }
+            );
+          }
+
+          const coSession = await stripe.checkout.sessions.create(
+            {
+              mode: "payment",
+              payment_method_types: ["card"],
+              line_items: [
+                {
+                  price_data: {
+                    currency: invoice.currency.toLowerCase(),
+                    product_data: {
+                      name: coDescription,
+                      description: `Payment to ${profile.business_name || "Contractor"}`,
+                    },
+                    unit_amount: coChargeAmount,
+                  },
+                  quantity: 1,
+                },
+              ],
+              payment_intent_data: {
+                application_fee_amount: coApplicationFee,
+                metadata: {
+                  supabase_invoice_id: invoice.id,
+                  supabase_user_id: invoice.user_id,
+                  payment_type: coPaymentType,
+                  payment_method: "card",
+                  invoice_number: invoice.invoice_number,
+                  base_amount: coBaseAmount.toString(),
+                  surcharge: (coChargeAmount - coBaseAmount).toString(),
+                  is_pro: isPro.toString(),
+                },
+              },
+              metadata: {
+                supabase_invoice_id: invoice.id,
+                supabase_user_id: invoice.user_id,
+                payment_type: coPaymentType,
+              },
+              success_url: `${baseUrl}?id=${invoice.tracking_id}&success=true&type=${coPaymentType}`,
+              cancel_url: `${baseUrl}?id=${invoice.tracking_id}&canceled=true`,
+              customer_email: invoice.client_email || undefined,
+            },
+            { stripeAccount: profile.stripe_account_id }
+          );
+
+          // Store payment intent ID
+          const coUpdateData: Record<string, string> = {};
+          if (coPaymentType === "deposit") {
+            coUpdateData.deposit_payment_intent_id = coSession.payment_intent as string;
+          } else {
+            coUpdateData.balance_payment_intent_id = coSession.payment_intent as string;
+          }
+
+          await supabase
+            .from("invoices")
+            .update(coUpdateData)
+            .eq("id", invoice.id);
+
+          return new Response(null, {
+            status: 302,
+            headers: {
+              ...corsHeaders,
+              Location: coSession.url!,
+            },
+          });
+        }
+
+        case "approve_change_only": {
+          // Approve change order without payment
+          await supabase
+            .from("invoices")
+            .update({ change_order_pending: false })
+            .eq("id", invoice.id);
+
+          // Log activity
+          await supabase.from("activity_events").insert({
+            user_id: invoice.user_id,
+            type: "change_order_approved",
+            invoice_id: invoice.id,
+            client_name: invoice.client_name,
+            amount: invoice.total,
+            metadata: { with_payment: false },
+          });
+
+          // Re-fetch and render with success message (change order card gone)
+          const { data: updatedInvoice } = await supabase
+            .from("invoices")
+            .select("*")
+            .eq("id", invoice.id)
+            .single();
+
+          return new Response(
+            renderPaymentPage(updatedInvoice as Invoice, profileWithPro, baseUrl,
+              "Changes approved. You can pay anytime using this link."),
+            { headers: { ...corsHeaders, "Content-Type": "text/html" } }
+          );
+        }
+
         case "approve_only": {
           // Just set approved_at, no payment
           await supabase
@@ -1150,7 +1419,9 @@ Deno.serve(async (req) => {
         total, currency, status,
         deposit_enabled, deposit_amount, amount_paid,
         approved_at, deposit_paid_at, tracking_id,
-        stripe_hosted_invoice_url
+        stripe_hosted_invoice_url,
+        change_order_pending, change_order_description,
+        change_order_amount, change_order_previous_total
       `)
       .eq("id", invoice.id)
       .single();

@@ -187,11 +187,16 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
       const newTaxAmount = Math.round(newSubtotal * (taxRate / 100));
       const newTotal = newSubtotal + newTaxAmount;
 
-      // Update invoice totals
+      // Update invoice totals + change order approval fields
+      const previousTotal = currentInvoice?.total || 0;
       const updated = await db.updateInvoice(invoiceId, {
         subtotal: newSubtotal,
         tax_amount: newTaxAmount,
         total: newTotal,
+        change_order_pending: true,
+        change_order_description: description,
+        change_order_amount: unitPrice,
+        change_order_previous_total: previousTotal,
       });
 
       if (updated) {
